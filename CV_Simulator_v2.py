@@ -24,7 +24,7 @@ BT = 0.25 #grid expansion factor 0 < BT < 1
 #Reaction Constants
 DA = 10 ** (-9) #m^2/s - Diffusion coeff of species A (mult by 10^4 to get cm^2/s)
 DB = 10 ** (-9) #m^2/s - Diffusion coeff of species B
-ks = 10 ** -5 #m^2/s - Surface rate constant (max value ~ 1 m^2/s or 10^4 cm^2/s)
+ks = 10 ** -6 #m^2/s - Surface rate constant (max value ~ 1 m^2/s or 10^4 cm^2/s)
 E0 = 2.5 #V - True reversible potential
 AP = 0.5 #Transfer coefficient
 n = 1 # # of electrons transferred
@@ -35,7 +35,7 @@ nu = 0.1 #V/s- Sweep rate
 Ei = 2 #V - Initial voltage
 Emax = 4.0 #V - Max voltage (end for forwards sweep
 Emin = 1.0 #V - Min voltage (end for backwards sweep)
-dE = 0.01 #V - potential step
+dE = 0.001 #V - potential step
 Ab = 0.01 #M - bulk conc. of A - MUST have a decimal!
 Bb = 0 #M - bulk conc. of B
 
@@ -46,7 +46,7 @@ dt = dE/nu #s, timestep
 kValues = np.array([ks*np.exp(VT*(Emin-E0)),ks*np.exp(VT*(Emax-E0))])
 Ds = R*T*max(kValues)/(F*nu) #Target dimensionless diffusion coeff
 print('DS = ',Ds)
-rat = Ds/max([DA,DB]) #ratio of dt/(dx)^2
+rat = (dE/0.001)*Ds/max([DA,DB]) #ratio of dt/(dx)^2
 dx = np.sqrt(dt/rat) #Necesary 'base' x-spacing for accuracy
 
 xmax = 6.0*np.sqrt(max([DA,DB])*tf) #maximum diffusion distance
@@ -117,11 +117,13 @@ for E in Evt:
      Cg = C
      #Create secondary reduced evaluator function
      fcn2 = lambda cc: fcn1(cc,C,kf,kb)
-     Cnew = spopt.root(fcn2,Cg,method='hybr',tol=1e-14).x
+     #Cnew = spopt.root(fcn2,Cg,method='hybr',tol=1e-14).x
+
      #Cnew = spopt.fsolve(fcn2,Cg)
      #Cnew = spopt.newton_krylov(fcn2,Cg)
      #Cnew = spopt.minimize(fcn2,C.flatten(),method='hybrd',options={'xatol': 1e-8,'fatol': 1e-8})
-     Cnew = Cnew.reshape(len(Cnew),1) 
+     #Cnew = Cnew.reshape(len(Cnew),1) 
+     Cnew = fx.MatLin(C,kf,kb,N,DAm,DA,DB,Cb,dx1)
      Istor[count,:] = DA*(Cnew[1] - Cnew[0])/dx1 #+ (E-1)/(8000) 
      #Istor[count,:] = Cnew[0]
      #Istor[count,:] = Cnew[N+1]
