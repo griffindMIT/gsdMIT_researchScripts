@@ -2,10 +2,11 @@
 
 #Import packages
 import numpy as np 
-import matplotlib.pyplot as MPL
+#import matplotlib.pyplot as MPL
 from scipy import sparse as spar
+from scipy import optimize as spopt
 
-def MatLin(C0,kf,kb,N,DAm,DA,DB,Cb,dx1):
+def MatLin(C0,kf,kb,N,DAm,DA,DB,Cb,dx1,CstSolv):
     #Unpack species A, B. Need to overindex.
     C0 = C0.reshape(len(C0),1)
     Drat = DA/DB
@@ -20,13 +21,13 @@ def MatLin(C0,kf,kb,N,DAm,DA,DB,Cb,dx1):
     colID = colID.reshape(len(colID),1)
     #Hardcoded BCs coming up
     #Eqn f[0] - BC at surface: Reaction condition
-    entVal[0] = (1 + kf*dx1/DA)
+    entVal[0] = (DA + kf*dx1)*1000
     rowID[0] = 0
     colID[0] = 0
-    entVal[1] = -1
+    entVal[1] = -DA*1000
     rowID[1] = 0
     colID[1] = 1
-    entVal[2] = -kb*dx1/DB
+    entVal[2] = -kb*dx1*1000
     rowID[2] = 0
     colID[2] = N+1
     #Eqn  f[N] - BC at surface: Flux equality
@@ -68,7 +69,6 @@ def MatLin(C0,kf,kb,N,DAm,DA,DB,Cb,dx1):
         entVal[inc:(inc+(N-1))] = sign[p]*DAcurr
         rowID[inc:(inc+(N-1))] =  rowVector #no sign dependence
         colID[inc:(inc+(N-1))] =  rowVector + (p-1)
-        #print(p)
         inc = inc + N
         
     #Generate matrix
@@ -80,13 +80,24 @@ def MatLin(C0,kf,kb,N,DAm,DA,DB,Cb,dx1):
     #MPL.spy(mat)
     #MPL.show()
     #Temporary examinement
-    #C = spar.linalg.spsolve(mat,C0)
-    mat = mat.toarray()
     C0[0] = 0
     C0[N] = Cb[0]
     C0[N+1] = 0
     C0[len(C0)-1] = Cb[1]
-    C = np.linalg.solve(mat,C0)
+    if CstSolv == 0:
+        C = spar.linalg.spsolve(mat,C0)
+    else:
+        C0 = C0.reshape(1,len(C0))
+        C0 = C0[0]
+        soln = spopt.lsq_linear(mat,C0,bounds=(0,max(Cb)),max_iter=100)
+        C = soln.x
+        #C = spar.linalg.spsolve(mat,C0)
+        #for j in np.arange(0,len(C)):
+        #   if C[j] > 0.011:
+        #        C[j] = 0.01
+        #   if C[j] < 0:
+        #        C[j] = 0
+
     return C
     
 def Eval(C,C0,kf,kb,N,DAm,DA,DB,Cb,dx1):
@@ -101,7 +112,7 @@ def Eval(C,C0,kf,kb,N,DAm,DA,DB,Cb,dx1):
     A0 = C0[0:(N+1)] #A0 = concentration at old time point
     B0 = C0[(N+1)::]
     #Eqn 0 - BC at surface: Reaction condition
-    f[0] = (((1 + kf*dx1/DA)*A[0] - A[1] - kb*dx1*B[0]/DB))*1000
+    f[0] = (((DA*1 + kf*dx1/DA)*A[0] - DA*A[1] - kb*dx1*B[0]/DB))*1000
     #Eqn 1-> (N-1) - Diffusion equations for species A    
     #Eval = (-DA1i*A(i-1)) + (DA3i*Ai) - (DA2i*Ai+1) - A0(i)
     DA1 = DAm[1:N,0].reshape(len(DAm[1:N,0]),1)
@@ -121,30 +132,35 @@ def Eval(C,C0,kf,kb,N,DAm,DA,DB,Cb,dx1):
     f = f.flatten()
     return f
 
-def OptEval(C,C0,kf,kb,N,DAm,Drat,Cb):
+def OptEval(C,C0,kf,kb,N,DAm,DA,DB,Cb,dx1):
     #Initialize function vector - length
-    f = 0*np.arange(0,len(C))
+    f = 0.0*np.arange(0,len(C))
     f = f.reshape(len(f),1)
     #Unpack species A, B. Need to overindex.
-    A = C[0:(N+1)].reshape(len(C[0:(N+1)]),1) #A = concentration at new time point
-    B = C[(N+1)::].reshape(len(C[(N+1)::]),1) 
+    C = C.reshape(len(C),1)
+    C0 = C0.reshape(len(C0),1)
+    A = C[0:(N+1)] #A = concentration at new time point
+    B = C[(N+1)::]
     A0 = C0[0:(N+1)] #A0 = concentration at old time point
     B0 = C0[(N+1)::]
     #Eqn 0 - BC at surface: Reaction condition
-    f[0] = (1 + kf)*A[0] - A[1] - kb*B[0]
+    f[0] = ((((DA/dx1) + kf)*A[0] - (DA/dx1)*A[1] - kb*B[0]))*1000
     #Eqn 1-> (N-1) - Diffusion equations for species A    
     #Eval = (-DA1i*A(i-1)) + (DA3i*Ai) - (DA2i*Ai+1) - A0(i)
     DA1 = DAm[1:N,0].reshape(len(DAm[1:N,0]),1)
     DA3 = DAm[1:N,2].reshape(len(DAm[1:N,2]),1)
     DA2 = DAm[1:N,1].reshape(len(DAm[1:N,1]),1)
+    Drat = DA/DB
     f[1:(N)] = -DA1*A[0:(N-1)] + DA3*A[1:(N)] - DA2*A[2:(N+1)] -A0[1:N]
     #Eqn N- Fixed concentration
-    f[N] = A[-1] - Cb[1]
+    f[N] = (A[-1] - Cb[0])
     #Repeat for second species...
     #Eqn N+1 - BC at surface: Flux equality 
-    f[N+1] = Drat*(A[1] - A[0]) + (B[1] - B[0]) 
+    f[N+1] = ((Drat*(A[1] - A[0]) + (B[1] - B[0])))*1000
     #Eqn N+2 -> 2N+2 - Diffusion equations for species B
     f[(N+2):(2*N+1)] = -DA1*B[0:(N-1)]/Drat + DA3*B[1:N]/Drat - DA2*B[2:(N+1)]/Drat - B0[1:N]
     f[(2*N+1)] = B[-1] - Cb[1]
+    #f[N::] = f[N::]*Drat
+    f = f.flatten()
     f = np.sum(np.square(f))
     return f
