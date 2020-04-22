@@ -4,163 +4,140 @@
 import numpy as np 
 #import matplotlib.pyplot as MPL
 from scipy import sparse as spar
-from scipy import optimize as spopt
+#from scipy import optimize as spopt
 
-def MatLin(C0,kf,kb,N,DAm,DA,DB,Cb,dx1,CstSolv):
-    #Unpack species A, B. Need to overindex.
-    C0 = C0.reshape(len(C0),1)
-    Drat = DA/DB
-    #Compute total # of entries - currently hardcoded...
-    entTot = (3 + 4 + 2) + 3*(2*N)
-    #Generate storage space for entry value, row, column index
-    entVal = 0.0*np.arange(0,entTot)
-    entVal = entVal.reshape(len(entVal),1)
-    rowID = 0.0*np.arange(0,entTot)
-    rowID = rowID.reshape(len(rowID),1)
-    colID = 0.0*np.arange(0,entTot)
-    colID = colID.reshape(len(colID),1)
-    #Hardcoded BCs coming up
-    #Eqn f[0] - BC at surface: Reaction condition
-    entVal[0] = (DA + kf*dx1)*1000
-    rowID[0] = 0
-    colID[0] = 0
-    entVal[1] = -DA*1000
-    rowID[1] = 0
-    colID[1] = 1
-    entVal[2] = -kb*dx1*1000
-    rowID[2] = 0
-    colID[2] = N+1
-    #Eqn  f[N] - BC at surface: Flux equality
-    entVal[3] = Drat
-    rowID[3] = N+1
-    colID[3] = 1
-    entVal[4] = -Drat
-    rowID[4] = N+1
-    colID[4] = 0
-    entVal[5] = 1
-    rowID[5] = N+1
-    colID[5] = N+2
-    entVal[6] = -1
-    rowID[6] = N+1
-    colID[6] = N+1
-    #Eqn f[N+1] - BC at bulk: fixed concentration
-    entVal[7] = 1
-    rowID[7] = N
-    colID[7] = N
-    #Eqn f[2N+1] - BC at bulk: fixed concentration
-    entVal[8] = 1
-    rowID[8] = 2*N + 1
-    colID[8] = 2*N + 1
-    #The rest of the equations
-    inc = 9 
-    pos = np.array([0,1,2,3,4,5])
+def MatSolve(C0,EqTog,kVect,N,Dm,D,Cb,dx1,dt):
+    #Generate matrix
+    Mat = makeMat(EqTog,kVect,N,Dm,D,Cb,dx1,dt)
+    #Correct the "RHS" - the initial state vector
+    #All "first entries" = 0, all "last entries" = bulk.
+    C0 = C0.reshape(len(C0),1);
+    C0[[0,N+1,2*N+2,3*N+3,4*N+4]] = np.array([0,0,0,0,0]).reshape(5,1)
+    C0[[N,2*N+1,3*N+2,4*N+3,5*N+4]] = np.array([Cb[0],Cb[1],Cb[2],Cb[3],Cb[4]]).reshape(5,1)
+    #Solve sparse matrix for new C
+    C = spar.linalg.spsolve(Mat,C0)
+    return C
+    
+def makeMat(EqTog,kVect,N,Dm,D,Cb,dx1,dt):
+    Nspec = 5 # # of species ### HARDCODED ###    
+    #Compute total # of entries... accounting going on below...
+    #Need 3 entries/spec for every center point. Point 1 to (N-1) is N entries. 
+    centerEntrs = 3*Nspec*(N)
+    #Need 1 entry/spec for every fixed conc point. 
+    fixedEntrs = Nspec
+    #Need 16 flux/rxn entries ### HARDCODED ### - goes down by 1 per reversilbe
+    surfbcEntr = 16 - sum(EqTog)
+    #Need 4 more entries for the rxn condition
+    entTot = centerEntrs + fixedEntrs + surfbcEntr
+    #Generate storage space fo entry value, row, column index
+    entVal = 0.0*np.arange(0,entTot).reshape(entTot,1)
+    #entVal is the multiplication factor for the matrix entry (-1, D, 1/x, etc.)
+    #"Row ID" refers to the position of the equation. All eqns share a row ID.
+    #"Col ID" refers to the position of the concentration in the C vector. 
+    #Col IDs for X0, Y0, W0, U0, Z0 = 0, N+1, 2*N+2, 3*N+3, 4*N+4
+    #Col IDs for XN, YN, WN, UN, ZN = N, 2*N+1, 3*N+2, 4*N+3, 5*N+4
+    rowID = 0.0*np.arange(0,entTot).reshape(entTot,1)
+    colID = 0.0*np.arange(0,entTot).reshape(entTot,1)
+    #Assign hardcoded BCs
+    #Eqns 0 through 4: Bulk concentration BCs
+    entVal[[0,1,2,3,4]] = np.array([1,1,1,1,1]).reshape(Nspec,1)
+    rowID[[0,1,2,3,4]] =np.array([N,2*N+1,3*N+2,4*N+3,5*N+4]).reshape(Nspec,1)
+    colID[[0,1,2,3,4]] = np.array([N,2*N+1,3*N+2,4*N+3,5*N+4]).reshape(Nspec,1)
+    #Eqn 5: Y flux constraint - 4 entries
+    #Eqn: X1 - X0 + Y1 - Y0 = 0
+    entVal[[5,6,7,8]] = np.array([1,-1,1,-1]).reshape(4,1)
+    rowID[[5,6,7,8]] = np.array([N+1,N+1,N+1,N+1]).reshape(4,1)
+    colID[[5,6,7,8]] = np.array([1,0,N+2,N+1]).reshape(4,1)
+    #Eqn 6: U flux constraint
+    #Eqn: W1 - W0 + U1 - U0 = 0
+    entVal[[9,10,11,12]] = np.array([1,-1,1,-1]).reshape(4,1) 
+    rowID[[9,10,11,12]] = np.array([3*N+3,3*N+3,3*N+3,3*N+3]).reshape(4,1)
+    colID[[9,10,11,12]] = np.array([2*N+3,2*N+2,3*N+4,3*N+3]).reshape(4,1)
+    #Eqn 7: Z flux constraint - 2 entries
+    #Eqn: Z1 - Z0 = 0
+    entVal[[13,14]] = np.array([1,-1]).reshape(2,1)
+    rowID[[13,14]] = np.array([4*N+4,4*N+4]).reshape(2,1)
+    colID[[13,14]] = np.array([4*N+5,4*N+4]).reshape(2,1)
+    #Why are X and W done last? to allow for equilib toggling with minimal
+    #interference with 'hardcoded' nature of BCs...
+    inc = 15
+    #Definition of kVect = np.array([kfXY,kbXY,kcY,kfWU,kbWU,kcU])
+    #Eqn 8: X reaction constraint
+    if EqTog[0] == 1:
+        #Equilibrium reaction constraint - 2 entries
+        #Eqn: (kf/kb)*X0 - Y0 = 0
+        entVal[[inc,inc+1]] = np.array([(kVect[0]/kVect[1]), -1]).reshape(2,1) 
+        rowID[[inc,inc+1]] = np.array([0,0]).reshape(2,1)
+        colID[[inc,inc+1]] = np.array([0,N+1]).reshape(2,1)
+        inc = inc + 2
+    else:
+        #Kinetic reaction constraint - 3 entries
+        #Eqn: (1 + kf*dx1/D)*X0 - X1 - (kb*dx1/D)*Y0 = 0
+        entVal[[inc,inc+1,inc+2]] = np.array([(1 + (kVect[0]*dx1/D)),-1,-1*(kVect[1]*dx1/D)]).reshape(3,1)
+        rowID[[inc,inc+1,inc+2]] = np.array([0,0,0]).reshape(3,1)
+        colID[[inc,inc+1,inc+2]] = np.array([0,1,N+1]).reshape(3,1)
+        inc = inc + 3
+    #Eqn 9: W reaction constraint
+    if EqTog[1] == 1:
+        #Equilibrium reaction constraint - 2 entries
+        #Eqn: (kf/kb)*W0 - U0 = 0
+        entVal[[inc,inc+1]] = np.array([(kVect[3]/kVect[4]), -1]).reshape(2,1) 
+        rowID[[inc,inc+1]] = np.array([2*N+2,2*N+2]).reshape(2,1)
+        colID[[inc,inc+1]] = np.array([2*N+2,3*N+3]).reshape(2,1)
+        inc = inc + 2
+    else:
+        #Kinetic reaction constraint - 3 entries
+        #Eqn: (1 + kf*dx1/D)*W0 - W1 - (kb*dx1/D)*U0 = 0
+        entVal[[inc,inc+1,inc+2]] = np.array([(1 + (kVect[3]*dx1/D)),-1,-1*(kVect[4]*dx1/D)]).reshape(3,1)
+        rowID[[inc,inc+1,inc+2]] = np.array([2*N+2,2*N+2,2*N+2]).reshape(3,1)
+        colID[[inc,inc+1,inc+2]] = np.array([2*N+2,2*N+3,3*N+3]).reshape(3,1)
+        inc = inc + 3
+    
+    #Allocate 'central points'    
+    #Limits for species: (after surface BC, before bulk BC). cc = 'corresponding conc'
+        #X -> 1 to N-1
+            #Eqn: -Dm[col 1]*X(i-1) + Dm[col 3]*X(i) - Dm[col2]X(i+1) = cc
+        #Y -> N+2 to 2*N
+            #Eqn: -Dm[col 1]*Y(i-1) + (kc*dt + Dm[col 3])*Y(i) - Dm[col2]Y(i+1) = cc
+        #W -> 2*N+3 to 3*N+1
+            #Eqn: -Dm[col 1]*W(i-1) + (-1*kc*dt + Dm[col 3])*W(i) - Dm[col2]W(i+1) = cc
+        #U -> 3*N+4 to 4*N+2
+            #Eqn: -Dm[col 1]*U(i-1) + (-1*kc*dt + kc*dt + Dm[col 3])*U(i) - Dm[col2]U(i) = cc 
+        #Z -> 4*N+5 to 5*N+3
+            #Eqn: -Dm[col 1]*Z(i-1) + Dm[col 3]*Z(i) - Dm[col 2]*Z(i+1) = cc
+    
+    #Begin some hardcoded nonsense...
+    specCounter = np.array([0,1,2,3,4])
+    specLow = np.array([1,N+2,2*N+3,3*N+4,4*N+5])
+    specHigh = np.array([N-1,2*N,3*N+1,4*N+2,5*N+3])
+    pos = np.array([0,1,2])
     sign = np.array([-1.0,1.0,-1.0])
     dex = np.array([0,2,1])
-    for p in pos:
-        if p > 2:
-            Drat = DA/DB
-            rowVector = np.arange((N+2),(2*N +1)) #overindex - 'central rows' of B
-            p = p - 3
-        else:
-            Drat = 1
-            rowVector = np.arange(1,N) #overindex- 'central rows' of A
-        rowVector = rowVector.reshape(len(rowVector),1)
-        DAcurr = Drat*DAm[1:N,dex[p]].reshape(len(DAm[1:N,dex[p]]),1)
-        entVal[inc:(inc+(N-1))] = sign[p]*DAcurr
-        rowID[inc:(inc+(N-1))] =  rowVector #no sign dependence
-        colID[inc:(inc+(N-1))] =  rowVector + (p-1)
-        inc = inc + N
-        
+    for ss in specCounter:
+        high = specHigh[ss]
+        low = specLow[ss]
+        rowVector = np.arange(low,high+1).reshape((high+1-low),1)
+        for p in pos:
+            Dmcc = Dm[1:N,dex[p]].reshape(len(Dm[1:N,dex[p]]),1)
+            factor = 0
+            if p == 1:
+                if ss == 1:
+                    factor = kVect[3]*dt    
+                if ss == 2:
+                    factor = -1*kVect[3]*dt
+                if ss == 3:
+                    factor = -1*kVect[3]*dt + kVect[5]*dt
+            entVal[inc:(inc+(N-1))] = sign[p]*(factor + Dmcc)
+            rowID[inc:(inc+(N-1))] = rowVector
+            colID[inc:(inc+(N-1))] = rowVector + (p-1)
+            inc = inc + N
+            
     #Generate matrix
     entVal = entVal.flatten()
     rowID = rowID.flatten()
     colID = colID.flatten()
-    mat = spar.coo_matrix((entVal,(rowID,colID)),shape=((2*N+2),(2*N+2)))
+    mat = spar.coo_matrix((entVal,(rowID,colID)),shape=((5*N+5),(5*N+5)))
     mat = mat.tocsr()
-    #MPL.spy(mat)
+    #MPL.spy(mat,markersize=3)
     #MPL.show()
-    #Temporary examinement
-    C0[0] = 0
-    C0[N] = Cb[0]
-    C0[N+1] = 0
-    C0[len(C0)-1] = Cb[1]
-    if CstSolv == 0:
-        C = spar.linalg.spsolve(mat,C0)
-    else:
-        C0 = C0.reshape(1,len(C0))
-        C0 = C0[0]
-        soln = spopt.lsq_linear(mat,C0,bounds=(0,max(Cb)),max_iter=100)
-        C = soln.x
-        #C = spar.linalg.spsolve(mat,C0)
-        #for j in np.arange(0,len(C)):
-        #   if C[j] > 0.011:
-        #        C[j] = 0.01
-        #   if C[j] < 0:
-        #        C[j] = 0
-
-    return C
-    
-def Eval(C,C0,kf,kb,N,DAm,DA,DB,Cb,dx1):
-    #Initialize function vector - length
-    f = 0.0*np.arange(0,len(C))
-    f = f.reshape(len(f),1)
-    #Unpack species A, B. Need to overindex.
-    C = C.reshape(len(C),1)
-    C0 = C0.reshape(len(C0),1)
-    A = C[0:(N+1)] #A = concentration at new time point
-    B = C[(N+1)::]
-    A0 = C0[0:(N+1)] #A0 = concentration at old time point
-    B0 = C0[(N+1)::]
-    #Eqn 0 - BC at surface: Reaction condition
-    f[0] = (((DA*1 + kf*dx1/DA)*A[0] - DA*A[1] - kb*dx1*B[0]/DB))*1000
-    #Eqn 1-> (N-1) - Diffusion equations for species A    
-    #Eval = (-DA1i*A(i-1)) + (DA3i*Ai) - (DA2i*Ai+1) - A0(i)
-    DA1 = DAm[1:N,0].reshape(len(DAm[1:N,0]),1)
-    DA3 = DAm[1:N,2].reshape(len(DAm[1:N,2]),1)
-    DA2 = DAm[1:N,1].reshape(len(DAm[1:N,1]),1)
-    Drat = DA/DB
-    f[1:(N)] = -DA1*A[0:(N-1)] + DA3*A[1:(N)] - DA2*A[2:(N+1)] -A0[1:N]
-    #Eqn N- Fixed concentration
-    f[N] = (A[-1] - Cb[0])
-    #Repeat for second species...
-    #Eqn N+1 - BC at surface: Flux equality 
-    f[N+1] = ((Drat*(A[1] - A[0]) + (B[1] - B[0])))*1000
-    #Eqn N+2 -> 2N+2 - Diffusion equations for species B
-    f[(N+2):(2*N+1)] = -DA1*B[0:(N-1)]/Drat + DA3*B[1:N]/Drat - DA2*B[2:(N+1)]/Drat - B0[1:N]
-    f[(2*N+1)] = B[-1] - Cb[1]
-    #f[N::] = f[N::]*Drat
-    f = f.flatten()
-    return f
-
-def OptEval(C,C0,kf,kb,N,DAm,DA,DB,Cb,dx1):
-    #Initialize function vector - length
-    f = 0.0*np.arange(0,len(C))
-    f = f.reshape(len(f),1)
-    #Unpack species A, B. Need to overindex.
-    C = C.reshape(len(C),1)
-    C0 = C0.reshape(len(C0),1)
-    A = C[0:(N+1)] #A = concentration at new time point
-    B = C[(N+1)::]
-    A0 = C0[0:(N+1)] #A0 = concentration at old time point
-    B0 = C0[(N+1)::]
-    #Eqn 0 - BC at surface: Reaction condition
-    f[0] = ((((DA/dx1) + kf)*A[0] - (DA/dx1)*A[1] - kb*B[0]))*1000
-    #Eqn 1-> (N-1) - Diffusion equations for species A    
-    #Eval = (-DA1i*A(i-1)) + (DA3i*Ai) - (DA2i*Ai+1) - A0(i)
-    DA1 = DAm[1:N,0].reshape(len(DAm[1:N,0]),1)
-    DA3 = DAm[1:N,2].reshape(len(DAm[1:N,2]),1)
-    DA2 = DAm[1:N,1].reshape(len(DAm[1:N,1]),1)
-    Drat = DA/DB
-    f[1:(N)] = -DA1*A[0:(N-1)] + DA3*A[1:(N)] - DA2*A[2:(N+1)] -A0[1:N]
-    #Eqn N- Fixed concentration
-    f[N] = (A[-1] - Cb[0])
-    #Repeat for second species...
-    #Eqn N+1 - BC at surface: Flux equality 
-    f[N+1] = ((Drat*(A[1] - A[0]) + (B[1] - B[0])))*1000
-    #Eqn N+2 -> 2N+2 - Diffusion equations for species B
-    f[(N+2):(2*N+1)] = -DA1*B[0:(N-1)]/Drat + DA3*B[1:N]/Drat - DA2*B[2:(N+1)]/Drat - B0[1:N]
-    f[(2*N+1)] = B[-1] - Cb[1]
-    #f[N::] = f[N::]*Drat
-    f = f.flatten()
-    f = np.sum(np.square(f))
-    return f
+    return mat
