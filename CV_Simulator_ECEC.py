@@ -27,12 +27,12 @@ R = 8.314 #J/mol-K - Gas const.
 
 #Reaction Constants
 D = 10 ** (-9) #m^2/s - Diffusion coeff (mult by 10^4 to get cm^2/s)
-ksXY = 10 ** (-6) #m/s - Surface rate constant (max value ~ 10^2 m/s or 10^4 cm/s)
-kcY = 0 #1/s - Homog. rate constant, first order
-ksWU = 0.00 #m/s - Surface rate constant
-kcU = 0.00 #1/(sM) - Homog. rate constant, second order
+ksXY = 10 ** (-9) #m/s - Surface rate constant (max value ~ 10^2 m/s or 10^4 cm/s)
+kcY = 0.01 #1/s - Homog. rate constant, first order
+ksWU = 10 ** (-9) #m/s - Surface rate constant
+kcU = 0.01 #1/(sM) - Homog. rate constant, second order
 #Set toggles to 1 to enforce ~equilibrium~ (infinitely fast ks for XY, WU)
-EqTog = np.array([1,0])
+EqTog = np.array([0,0])
 ConcertTog = 0
 
 E0XY = 2.5 #V - True reversible potl for X=Y
@@ -45,7 +45,7 @@ nWU = 1 # # of electrons transferred for W = U
 VTWU = BsWU*nWU*F/(R*T)
 
 #Experiment constants
-nu = 0.1 #V/s- Sweep rate
+nu = 0.01 #V/s- Sweep rate
 Ei = 1.5 #V - Initial voltage
 Emax = 4.0 #V - Max voltage (end for forwards sweep
 Emin = 1.0 #V - Min voltage (end for backwards sweep)
@@ -59,10 +59,10 @@ Zb = 0.0 #M - bulk conc of Z
 
 #Computational toggles
 concplots = 1 #toggle for concentration plot displays (1 = yes, 0 = no)
-plotDens = 50; #Approximate # of plots desired to appear
+plotDens = 20; #Approximate # of plots desired to appear
 dx = 1e-10 #m - smallest spatial resolution - set for convergence
-dE = 0.001  #V - potential step - set for convergence
-BT = 0.25 #grid expansion factor 0 < BT < 1, higher is faster & less accurate
+dE = 0.01  #V - potential step - set for convergence
+BT = 0.5 #grid expansion factor 0 < BT < 1, higher is faster & less accurate
 
 ############################ COMPUTATION BEGINS #######################
 
@@ -135,8 +135,8 @@ for E in Evt:
              #Plot concentration profiles
              MP.plot(xgrid,Cnew[0:(N+1)],'-b') #X
              MP.plot(xgrid,Cnew[(N+1):(2*N+2)],'-r') #Y
-             MP.plot(xgrid,Cnew[(2*N+2):(3*N+3)],'-g') #W
-             MP.plot(xgrid,Cnew[(3*N+3):(4*N+4)],'-k') #U
+             MP.plot(xgrid,Cnew[(2*N+2):(3*N+3)],'-k') #W
+             MP.plot(xgrid,Cnew[(3*N+3):(4*N+4)],'-g') #U
              MP.plot(xgrid,Cnew[(4*N+4)::],'-y') #Z
              #Plot aesthetics
              MP.title(['Voltage = ',np.round(E[0],4),' V'])

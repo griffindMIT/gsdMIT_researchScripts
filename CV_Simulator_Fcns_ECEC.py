@@ -23,12 +23,14 @@ def makeMat(EqTog,kVect,N,Dm,D,Cb,dx1,dt):
     #Compute total # of entries... accounting going on below...
     #Need 3 entries/spec for every center point. Point 1 to (N-1) is N entries. 
     centerEntrs = 3*Nspec*(N)
+    #Need 1 entries/spec for every non-self catalytic center point (W, U, Z)
+    catylEntrs = 3*N
     #Need 1 entry/spec for every fixed conc point. 
     fixedEntrs = Nspec
     #Need 16 flux/rxn entries ### HARDCODED ### - goes down by 1 per reversilbe
     surfbcEntr = 16 - sum(EqTog)
     #Need 4 more entries for the rxn condition
-    entTot = centerEntrs + fixedEntrs + surfbcEntr
+    entTot = centerEntrs + fixedEntrs + surfbcEntr + catylEntrs
     #Generate storage space fo entry value, row, column index
     entVal = 0.0*np.arange(0,entTot).reshape(entTot,1)
     #entVal is the multiplication factor for the matrix entry (-1, D, 1/x, etc.)
@@ -119,19 +121,31 @@ def makeMat(EqTog,kVect,N,Dm,D,Cb,dx1,dt):
         rowVector = np.arange(low,high+1).reshape((high+1-low),1)
         for p in pos:
             Dmcc = Dm[1:N,dex[p]].reshape(len(Dm[1:N,dex[p]]),1)
-            factor = 0
-            if p == 1:
-                if ss == 1:
-                    factor = kVect[3]*dt    
-                if ss == 2:
-                    factor = -1*kVect[3]*dt
-                if ss == 3:
-                    factor = -1*kVect[3]*dt + kVect[5]*dt
-            entVal[inc:(inc+(N-1))] = sign[p]*(factor + Dmcc)
+            ACF = 0 #Autocatalytic factor
+            if p == 1: 
+                if ss == 1: #Species Y - autocat factor
+                    ACF = kVect[2]*dt    
+                if ss == 3: #Species U
+                    ACF = kVect[5]*dt
+                if ss == 2 or ss == 3 or ss == 4: #Catalytic production of W,U,Z
+                    liner = np.arange(1,N)/np.arange(1,N) 
+                    liner = liner.reshape(len(liner),1)
+                    rowID[inc:(inc+(N-1))] = rowVector
+                    if ss == 2 or ss == 3: #If producing W,U from Y
+                        CF = -kVect[2]*dt #Catalytic factor
+                        entVal[inc:(inc+(N-1))] = CF*liner
+                        colID[inc:(inc+(N-1))] = np.arange(N+2,2*N+1).reshape(N-1,1) #Y positions
+                    else: #If producing Z from U
+                        CF = -kVect[5]*dt
+                        entVal[inc:(inc+(N-1))] = CF*liner
+                        colID[inc:(inc+(N-1))] = np.arange(N+2,2*N+1).reshape(N-1,1) #U positions
+                    inc = inc + N    
+            entVal[inc:(inc+(N-1))] = sign[p]*(ACF + Dmcc) ##missing the overindex?
             rowID[inc:(inc+(N-1))] = rowVector
             colID[inc:(inc+(N-1))] = rowVector + (p-1)
             inc = inc + N
-            
+                
+                
     #Generate matrix
     entVal = entVal.flatten()
     rowID = rowID.flatten()
