@@ -87,6 +87,7 @@ while file_importing == 0
                    dataMat{dMS,5} = expNo; %Experiment #
                    dataMat{dMS,6} = infoStruct.date; %Date run
                    dataMat{dMS,7} = infoStruct.species; %Species
+                   dataMat{dMS,8} = dMS; %Counter
                    %Increments dataMatSize by 1
                    dMS = dMS + 1;
                catch
@@ -114,6 +115,7 @@ while file_importing == 0
                     dataMat{dMS,5} = expNo; %Experiment #
                     dataMat{dMS,6} = infoStruct.date; %Date run
                     dataMat{dMS,7} = infoStruct.species; %Species
+                    dataMat{dMS,8} = dMS; %Counter
                     dMS = dMS + 1;
                   catch
                     %Log if any experiments failed to load  

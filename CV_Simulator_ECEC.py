@@ -2,7 +2,7 @@
 
 #Import packages
 import numpy as np 
-from scipy import optimize as spopt
+#from scipy import optimize as spopt
 import math
 import matplotlib.pyplot as MP
 import CV_Simulator_Fcns_ECEC as fx
@@ -25,12 +25,12 @@ R = 8.314 #J/mol-K - Gas const.
 #W = U + e (kWU)
 #U + (H2O) -> Z (kcU) 
 
-#Reaction Constants
 D = 10 ** (-9) #m^2/s - Diffusion coeff (mult by 10^4 to get cm^2/s)
-ksXY = 10 ** (-9) #m/s - Surface rate constant (max value ~ 10^2 m/s or 10^4 cm/s)
-kcY = 0.01 #1/s - Homog. rate constant, first order
-ksWU = 10 ** (-9) #m/s - Surface rate constant
-kcU = 0.01 #1/(sM) - Homog. rate constant, second order
+#Reaction Constants
+ksXY = 10 ** (-6) #m/s - Surface rate constant (max value ~ 10^2 m/s or 10^4 cm/s)
+kcY = 0.01 #(1) #1/s - Homog. rate constant, first order
+ksWU = 0 #10 ** (-6) #m/s - Surface rate constant
+kcU  = 0 #0.001 #1/(sM) - Homog. rate constant, second order
 #Set toggles to 1 to enforce ~equilibrium~ (infinitely fast ks for XY, WU)
 EqTog = np.array([0,0])
 ConcertTog = 0
@@ -39,13 +39,13 @@ E0XY = 2.5 #V - True reversible potl for X=Y
 BsXY = 0.5 #Symmetry factor for X = Y
 nXY = 1 # # of electrons transferred for X = Y
 VTXY = BsXY*nXY*F/(R*T)
-E0WU = 2.0 #V - True reversible potl for W=U
+E0WU = 1.5 #V - True reversible potl for W=U
 BsWU = 0.5 #Symmetry factor for W = U
 nWU = 1 # # of electrons transferred for W = U
 VTWU = BsWU*nWU*F/(R*T)
 
 #Experiment constants
-nu = 0.01 #V/s- Sweep rate
+nu = 0.1 #V/s- Sweep rate
 Ei = 1.5 #V - Initial voltage
 Emax = 4.0 #V - Max voltage (end for forwards sweep
 Emin = 1.0 #V - Min voltage (end for backwards sweep)
@@ -59,10 +59,10 @@ Zb = 0.0 #M - bulk conc of Z
 
 #Computational toggles
 concplots = 1 #toggle for concentration plot displays (1 = yes, 0 = no)
-plotDens = 20; #Approximate # of plots desired to appear
+plotDens = 50; #Approximate # of plots desired to appear
 dx = 1e-10 #m - smallest spatial resolution - set for convergence
-dE = 0.01  #V - potential step - set for convergence
-BT = 0.5 #grid expansion factor 0 < BT < 1, higher is faster & less accurate
+dE = 0.0001  #V - potential step - set for convergence
+BT = 0.25 #grid expansion factor 0 < BT < 1, higher is faster & less accurate
 
 ############################ COMPUTATION BEGINS #######################
 
@@ -105,6 +105,8 @@ Dm = np.concatenate([D1i,D2i,D3i],axis=1)
 #Initialize potential vector
 #For CV analysis
 Evt = np.concatenate([np.arange(Ei+dE,(Emax+dE),dE),np.arange(Emax,(Emin-dE),-dE),np.arange(Emin,Ei+2*dE,dE)])
+#Add cycles to the CV
+Evt = np.concatenate([Evt,Evt])
 #For Linear Sweep analysis
 #Evt = np.arange(Ei+dE,Emax+dE,dE)
 #Either way, need to preallocate
@@ -159,13 +161,34 @@ dex = np.where(Istor == max(Istor))
 TPP = E0XY + 0.78*R*T/(BsXY*F) - R*T*np.log(ksXY*np.sqrt(R*T/(BsXY*F*nu*D)))/(BsXY*F)
 TPPeq = E0XY + 1.11*R*T/F
 TPPC = 0.496*F*Cb[0]*np.sqrt(D)*np.sqrt(BsXY*F*nu/(R*T))
-TPPCeq = 0.446*F*Cb[0]*np.sqrt(D)*np.sqrt(BsXY*F*nu/(R*T))
+TPPCeq = 0.446*F*Cb[0]*np.sqrt(D)*np.sqrt(2*BsXY*F*nu/(R*T))
 print('Peak Potential/True/Eq // / Peak Current/True/Eq')
 print(Evt[dex],[np.round(TPP,4)],[np.round(TPPeq,4)],\
       [np.format_float_scientific(Istor[dex][0],precision=5)],\
       [np.format_float_scientific(TPPC,precision=5)],\
       [np.format_float_scientific(TPPCeq,precision=5)])
-
+    
+    
+#Compute second derivative of Istor through easy methods
+nl = len(Istor)
+I2deriv = Istor[0:nl-2] + -2*Istor[1:nl-1] + Istor[2:nl]
+redEvt = Evt[1:nl-1]
+I2deriv[0:100] = 0 #screening for low alpha values
+dexlow = np.where(I2deriv == min(I2deriv))
+dexlow = dexlow[0][0]
+dexhi = np.where(I2deriv == max(I2deriv))
+dexhi = dexhi[0][0]
+nearzerI2 = I2deriv[dexhi:dexlow]
+nearzerEvt = redEvt[dexhi:dexlow]
+Einf = nearzerEvt[np.where(abs(nearzerI2) == min(abs(nearzerI2)))];
+Einf = Einf[0]
+MP.figure(4)
+MP.plot(redEvt,I2deriv)
+MP.plot(np.array([redEvt[dexlow],redEvt[dexhi]]),np.array([0,0]))
+MP.plot(Einf,0,'ok')
+MP.show()
+print(Evt[dex],[np.round(Einf,4)],Evt[dex]-Einf)
+    
 #End timing
 toc = time.time()
 print('Time Elapsed',toc-tic)
