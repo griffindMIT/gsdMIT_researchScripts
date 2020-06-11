@@ -3,7 +3,8 @@
 #Import packages
 import numpy as np 
 #import matplotlib.pyplot as MPL
-from scipy import sparse as spar
+import scipy.sparse as spar
+from scipy.sparse import linalg as sparL
 #from scipy import optimize as spopt
 
 def MatSolve(C0,EqTog,kVect,N,Dm,D,Cb,dx1,dt):
@@ -15,7 +16,7 @@ def MatSolve(C0,EqTog,kVect,N,Dm,D,Cb,dx1,dt):
     C0[[0,N+1,2*N+2,3*N+3,4*N+4]] = np.array([0,0,0,0,0]).reshape(5,1)
     C0[[N,2*N+1,3*N+2,4*N+3,5*N+4]] = np.array([Cb[0],Cb[1],Cb[2],Cb[3],Cb[4]]).reshape(5,1)
     #Solve sparse matrix for new C
-    C = spar.linalg.spsolve(Mat,C0)
+    C = sparL.spsolve(Mat,C0)
     return C
     
 def makeMat(EqTog,kVect,N,Dm,D,Cb,dx1,dt):

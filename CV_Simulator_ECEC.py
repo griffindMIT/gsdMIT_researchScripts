@@ -27,8 +27,8 @@ R = 8.314 #J/mol-K - Gas const.
 
 D = 10 ** (-9) #m^2/s - Diffusion coeff (mult by 10^4 to get cm^2/s)
 #Reaction Constants
-ksXY = 10 ** (-6) #m/s - Surface rate constant (max value ~ 10^2 m/s or 10^4 cm/s)
-kcY = 0.01 #(1) #1/s - Homog. rate constant, first order
+ksXY = 10 ** (0) #m/s - Surface rate constant (max value ~ 10^2 m/s or 10^4 cm/s)
+kcY =  10 ** (3) #1/s - Homog. rate constant, first order
 ksWU = 0 #10 ** (-6) #m/s - Surface rate constant
 kcU  = 0 #0.001 #1/(sM) - Homog. rate constant, second order
 #Set toggles to 1 to enforce ~equilibrium~ (infinitely fast ks for XY, WU)
@@ -38,14 +38,14 @@ ConcertTog = 0
 E0XY = 2.5 #V - True reversible potl for X=Y
 BsXY = 0.5 #Symmetry factor for X = Y
 nXY = 1 # # of electrons transferred for X = Y
-VTXY = BsXY*nXY*F/(R*T)
+VTXY = BsXY*nXY*F/(R*T) 
 E0WU = 1.5 #V - True reversible potl for W=U
 BsWU = 0.5 #Symmetry factor for W = U
 nWU = 1 # # of electrons transferred for W = U
 VTWU = BsWU*nWU*F/(R*T)
 
 #Experiment constants
-nu = 0.1 #V/s- Sweep rate
+nu = 10 ** (0) #V/s- Sweep rate
 Ei = 1.5 #V - Initial voltage
 Emax = 4.0 #V - Max voltage (end for forwards sweep
 Emin = 1.0 #V - Min voltage (end for backwards sweep)
@@ -60,8 +60,8 @@ Zb = 0.0 #M - bulk conc of Z
 #Computational toggles
 concplots = 1 #toggle for concentration plot displays (1 = yes, 0 = no)
 plotDens = 50; #Approximate # of plots desired to appear
-dx = 1e-10 #m - smallest spatial resolution - set for convergence
-dE = 0.0001  #V - potential step - set for convergence
+dx = 1e-9 #m - smallest spatial resolution - set for convergence
+dE = 0.001  #V - potential step - set for convergence
 BT = 0.25 #grid expansion factor 0 < BT < 1, higher is faster & less accurate
 
 ############################ COMPUTATION BEGINS #######################
@@ -104,11 +104,11 @@ Dm = np.concatenate([D1i,D2i,D3i],axis=1)
 
 #Initialize potential vector
 #For CV analysis
-Evt = np.concatenate([np.arange(Ei+dE,(Emax+dE),dE),np.arange(Emax,(Emin-dE),-dE),np.arange(Emin,Ei+2*dE,dE)])
+#Evt = np.concatenate([np.arange(Ei+dE,(Emax+dE),dE),np.arange(Emax,(Emin-dE),-dE),np.arange(Emin,Ei+2*dE,dE)])
 #Add cycles to the CV
-Evt = np.concatenate([Evt,Evt])
+#Evt = np.concatenate([Evt,Evt])
 #For Linear Sweep analysis
-#Evt = np.arange(Ei+dE,Emax+dE,dE)
+Evt = np.arange(Ei+dE,Emax+dE,dE)
 #Either way, need to preallocate
 Evt = Evt.reshape(len(Evt),1)
 dispFreq = (Emax-Emin)/(dE*plotDens); #Frequency of concentration plot displays
