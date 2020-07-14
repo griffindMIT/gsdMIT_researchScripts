@@ -35,10 +35,10 @@ def simCV(value):
 
     #Reaction Constants
     k1s = 10 ** (0) #m/s - Surface rate constant (max value ~ 10^2 m/s or 10^4 cm/s)
-    k2f = 10 ** (0) #1/s - Homog. rate constant, first order. 
+    k2f = 10 ** (3) #1/s - Homog. rate constant, first order. 
     DtG2 = 15 #J/mol, Estimate of delta G for rxn 2
     K2 = np.exp(-DtG2*4184/(R*T)) #Equilibrium constant for rxn 2
-    #K2 = 1/3
+    K2 = 3
     k2b = k2f/K2 #1/s - Reverse homog reaction rate of rxn 2, estimated via equilibrium constant
     k3s = 0.0 #10 ** (-6) #m/s - Surface rate constant
     k4f  = 0.0 #0.001 #1/(sM) - Homog. rate constant, second order
@@ -51,7 +51,7 @@ def simCV(value):
     k5bs = k5fs/K5 #Reverse rate constant for rxn 5
 
     #Irreversible toggles - uncomment if you wish to force irreversible reactions. 
-    k2b = 0.0
+    #k2b = 0.0
     k4b = 0.0
     k5bs = 0.0
 
@@ -92,7 +92,7 @@ def simCV(value):
     concplots = 1 #toggle for concentration plot displays (1 = yes, 0 = no)
     plotDens = 25; #Approximate # of plots desired to appear during experiment
     #dx = 10 ** (-16)   #m - smallest spatial resolution - set for convergence (test w/analytic)
-    dE = value  #V - potential step - set for convergence
+    dE = 0.001  #V - potential step - set for convergence
     BT = 0.25 #grid expansion factor 0 < BT < 1, higher is faster & less accurate
 
     ############################ COMPUTATION BEGINS #######################
@@ -267,10 +267,10 @@ def simCV(value):
     
 #Set up experiments down here
 #Run a single CV with one input - this line
-#simCV(-15.0)
+simCV(-15.0)
 
 #Run over a range of inputs - set values in valVect
 #valVect = np.arange(15.0,-16.0,-1.0)
-valVect = np.array([0.001,0.0005,0.0001,0.00005])
-for vv in valVect:
-    simCV(vv)
+#valVect = np.array([0.001,0.0005,0.0001,0.00005])
+#for vv in valVect:
+#    simCV(vv)
