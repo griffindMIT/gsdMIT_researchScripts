@@ -252,113 +252,24 @@ def makeMat(C0,kVect,Dm,dt,FcEq,N,Dv,dx1,Cb):
     k4b = kVect[7]
     k5f = kVect[8]*dx1/Dv[0]
     k5b = kVect[9]*dx1/Dv[0]
+    k6f = kVect[10]
+    k6b = kVect[11]
     #Extract previous timepoint data for U0 (u0) and W0 (w0)
-    w0 = C0[2*N+2]
-    u0 = C0[3*N+3]
+    w0 = C0[2*N+2][0]
+    u0 = C0[3*N+3][0]
     
-    #Assign # of species in the mechanism
-    Nspec = 5 
-    #Assessment of equilibrium happens here (coming soon)
     #Turn off equilibrated rxns if the rate constants are identically zero
     if k1f == 0:
         FcEq[0] = 0
     if k3f == 0:
         FcEq[2] = 0
     
-    #Compute total # of entries... accounting going on below...
-    ############################ ACCOUNTING FOR BC ENTRIES ###################
-    #Initialize 'total entry' count tracker, entTot. 
-    entTot = 0
-    #Add 1 entry for each 'fixed concentration' BC
-    entTot = entTot + 5
-    #Compute BC entries
-    if k5f == 0:
-        #Assumes that if k5f = 0, k1f =/= 0
-        if FcEq[0] == 1:
-            #Use Nernstian equation for X
-            entTot = entTot + 2
-        else:
-            #Use kinetic eqn for X
-            entTot = entTot + 3
-        #Regardless of equilibrium, use equal-flux condition for Y
-        entTot = entTot + 4
-        if FcEq[2] == 1:
-            #Use Nernstian equation for W
-            entTot = entTot + 2
-            #Use flux equality condition for U
-            entTot = entTot + 4
-        elif k3f == 0: 
-            #No reaction 3 occurs, use a no-flux condition for W
-            entTot = entTot + 2
-            #Use a no-flux condition for U
-            entTot = entTot + 2
-        else:
-            #Use kinetic eqn for W
-            entTot = entTot + 3
-            #Use flux equality condition for U
-            entTot = entTot + 4
-            
-    else:
-        #Since k5f =/= 0, k1f may be zero, equilibriated, or kinetic
-        if k1f == 0:
-            if abs(k5b) > 0:
-                #Use kinetic control for concerted only (X BC)
-                entTot = entTot + 4
-            else:
-                #Use concerted kinetic for X that doesn't explode
-                entTot = entTot + 2
-            #Use a no-flux condition for Y
-            entTot = entTot + 2            
-        elif FcEq[0] == 1:
-            if abs(k5b) > 0:
-                #Use derived partial-equilibrium expression (X BC)
-                entTot = entTot + 6
-            else:
-                #Use the version that doesn't explode
-                entTot = entTot + 4
-            #Use a Nernst relation for Y
-            entTot = entTot + 2
-        else: 
-            #Use kinetic control for both reactions 1 and 2 (X BC)
-            entTot = entTot + 5
-            #Use kinetic control for Y reaction as well
-            entTot = entTot + 3
-            
-        if k3f == 0:
-            #Use only concerted kinetic relationship for W
-            entTot = entTot + 4
-            #Use flux equality condition for U
-            entTot = entTot + 4
-        elif FcEq[2] == 1:
-            #Use derived kinetic relationship for W
-            entTot = entTot + 5
-            #Use Nernst relationship for U
-            entTot = entTot + 2
-        else: 
-            #Use kinetic control for all reactions for W
-            entTot = entTot + 4
-            #Use... flux balance for U
-            entTot = entTot + 8
-    #Regardless of all else, use a no-flux condition for Z
-    entTot = entTot + 2
-    
-    ##################### ACCOUNTING FOR CENTER POINT ENTRIES ###############
-    #Number of center points that are actually present
-    ctct = (N-1) #???
-    #Every species needs at least 3 entries over (N-1) points 
-    centerDiffs = 3*Nspec*ctct
-    #X requires no additional entries. 
-    #Y has a self-catalytic term, plus two back-reaction terms, need +2etr/pt
-    centerYPts = 2*ctct
-    #W has a self-cat term, plus one gen and one back-rxn term, need +2etr/pt
-    centerWPts = 2*ctct
-    #U has a self-cat term, plus two gen and one back-rxn term, need +3etr/pt
-    centerUPts = 3*ctct
-    #Z has a self-cat term, plus one gen term, need +1etr/pt
-    centerZPts = ctct
-    #Add all center points, add to total # of entries
-    centerTots = centerDiffs + centerYPts + centerWPts + centerUPts + centerZPts   
-    entTot = entTot + centerTots
+    #Compute total # of entries... accounting going on below... 
+    #5 for fixed-conc BCs, 25 for maximum # of variable BCs (see equations)
+    #(N-1) center points so 3 * # of species times that for diffusion stuff. 
+    #Add additional catalytic requirements (2 for Y, 2 for W, 3 for U, 1 for Z).
+    entTot = 5 + 25 + (3*5 + 2 + 2 + 3 + 1)*(N-1)
+    inc = 0
     
     ##################### ASSIGNING BC TO MATRIX ###########################
     #Generate storage space fo entry value, row, column index
@@ -377,161 +288,67 @@ def makeMat(C0,kVect,Dm,dt,FcEq,N,Dv,dx1,Cb):
     #Eqns 0 through 4: Bulk concentration BCs
     #AN = Ab, where A = {X,Y,W,U,Z}, Ab = bulk, row@AN
     #Note carefully that vector[index1:index2] retrieves entries index1 to (index2-1).
-    entVal[0:5] = np.array([1,1,1,1,1]).reshape(Nspec,1)
-    rowID[0:5] =np.array([N,2*N+1,3*N+2,4*N+3,5*N+4]).reshape(Nspec,1)
-    colID[0:5] = np.array([N,2*N+1,3*N+2,4*N+3,5*N+4]).reshape(Nspec,1)
-    #Assign variable BCs
-    #Start incrementer - keeps track of eqn # for the addition of more elements.
-    inc = 5
-    #Following through same logic path as above, now implementing equations. 
-    if k5f ==0:
-        if FcEq[0] ==1:
-            #Nernst for X: (k1f/k1b)*X0 - Y0 = 0, row@X0
-            entVal[inc:(inc+2)] = np.array([k1f/k1b,-1]).reshape(2,1)
-            rowID[inc:(inc+2)] = np.array([0,0]).reshape(2,1)
-            colID[inc:(inc+2)] = np.array([0,N+1]).reshape(2,1)
-            inc = inc + 2
-        else:
-            #Kinetic for X: (1/k1b + k1f/k1b)X0 - (1/k1b)X1 - Y0 = 0, row@X0
-            entVal[inc:(inc+3)] = np.array([((1/k1b) + (k1f/k1b)),(-1/k1b),-1]).reshape(3,1)
-            rowID[inc:(inc+3)] = np.array([0,0,0]).reshape(3,1)
-            colID[inc:(inc+3)] = np.array([0,1,N+1]).reshape(3,1)
-            inc = inc + 3            
-        #Equal-flux for Y: X1 - X0 + Y1 - Y0 = 0, row@Y0
-        entVal[inc:(inc+4)] = np.array([1,-1,1,-1]).reshape(4,1)
-        rowID[inc:(inc+4)] = np.array([N+1,N+1,N+1,N+1]).reshape(4,1)
-        colID[inc:(inc+4)] = np.array([1,0,N+2,N+1]).reshape(4,1)
-        inc = inc + 4
-        if FcEq[2] ==1:
-            #Nernst for W: (k3f/k3b)W0 - U0 = 0, row@W0
-            entVal[inc:(inc+2)] = np.array([(k3f/k3b),-1]).reshape(2,1)
-            rowID[inc:(inc+2)] = np.array([2*N+2,2*N+2]).reshape(2,1)
-            colID[inc:(inc+2)] = np.array([2*N+2,3*N+3]).reshape(2,1)
-            inc = inc + 2
-            #Equal-flux for U: W1 - W0 + U1 - U0 = 0, row@U0
-            entVal[inc:(inc+4)] = np.array([1,-1,1,-1]).reshape(4,1) 
-            rowID[inc:(inc+4)] = np.array([(3*N+3),(3*N+3),(3*N+3),(3*N+3)]).reshape(4,1) 
-            colID[inc:(inc+4)] = np.array([2*N+3,2*N+2,3*N+4,3*N+3]).reshape(4,1)
-            inc = inc + 4
-        elif k3f ==0:
-            #No flux for W: W1 - W0 = 0, row@W0
-            entVal[inc:(inc+2)] = np.array([1,-1]).reshape(2,1)
-            rowID[inc:(inc+2)] = np.array([2*N+2,2*N+2]).reshape(2,1)
-            colID[inc:(inc+2)] = np.array([2*N+3,2*N+2]).reshape(2,1)
-            inc = inc + 2
-            #No flux for U: W1 - W0 = 0, row@U0
-            entVal[inc:(inc+2)] = np.array([1,-1]).reshape(2,1)
-            rowID[inc:(inc+2)] = np.array([3*N+3,3*N+3]).reshape(2,1)
-            colID[inc:(inc+2)] = np.array([3*N+4,3*N+3]).reshape(2,1)
-            inc = inc + 2
-        else:
-            #Kinetic for W: (1/k3b + k3f/k3b)W0 - (1/k3b)W1 - U0 = 0, row@W0
-            entVal[inc:(inc+3)] = np.array([((1/k3b)+(k3f/k3b)),(-1/k3b),-1]).reshape(3,1)
-            rowID[inc:(inc+3)] = np.array([2*N+2,2*N+2,2*N+2]).reshape(3,1)
-            colID[inc:(inc+3)] = np.array([2*N+2,2*N+3,3*N+3]).reshape(3,1)
-            inc = inc + 3
-            #Equal-flux for U: W1- W0 + U1 - U0 = 0, row@U0
-            entVal[inc:(inc+4)] = np.array([1,-1,1,-1]).reshape(4,1) 
-            rowID[inc:(inc+4)] = np.array([(3*N+3),(3*N+3),(3*N+3),(3*N+3)]).reshape(4,1) 
-            colID[inc:(inc+4)] = np.array([2*N+3,2*N+2,3*N+4,3*N+3]).reshape(4,1)
-            inc = inc + 4
-    else:
-        if k1f ==0:
-            if abs(k5b) > 0:
-                #kinetic for X: (1/k5b + k5f/k5b)X0 - (1/k5b)X1 - (u0)W0 - (w0)U0 = - (w0u0), row@X0
-                entVal[inc:(inc+4)] = np.array([((1/k5b) + (k5f/k5b)),(-1/k5b),(-u0),(-w0)]).reshape(4,1)
-                rowID[inc:(inc+4)] = np.array([0,0,0,0]).reshape(4,1)
-                colID[inc:(inc+4)] = np.array([0,1,2*N+2,3*N+3]).reshape(4,1)
-                inc = inc + 4
-            else:
-                #Non-exploding scaling: (1 + k5f)X0 - X1 = 0
-                entVal[inc:(inc+2)] = np.array([(1+k5f),-1]).reshape(2,1)
-                rowID[inc:(inc+2)] = np.array([0,0]).reshape(2,1)
-                colID[inc:(inc+2)] = np.array([0,1]).reshape(2,1)
-                inc = inc + 2
-            #No flux for Y: Y1 - Y0 = 0 , row@Y0
-            entVal[inc:(inc+2)] = np.array([1,-1]).reshape(2,1)
-            rowID[inc:(inc+2)] = np.array([N+1,N+1]).reshape(2,1)
-            colID[inc:(inc+2)] = np.array([N+2,N+1]).reshape(2,1)
-            inc = inc + 2
-        elif FcEq[0] ==1:
-            if abs(k5b) > 0:
-                #Partial kin. for X: (1/k5b + k5f/k5b)X0 - (1/k5b)X1 - (1/k5b)Y1 + (1/k5b)Y0 ... 
-                #...  - (u0)W0 - (w0)U0 = -(w0u0), row@X0
-                entVal[inc:(inc+3)] = np.array([((1/k5b)+(k5f/k5b)),(-1/k5b),(-1/k5b)]).reshape(3,1)
-                entVal[(inc+3):(inc+6)] = np.array([(1/k5b),(-u0),(-w0)]).reshape(3,1)
-                rowID[inc:(inc+6)] = np.array([0,0,0,0,0,0]).reshape(6,1)
-                colID[inc:(inc+6)] = np.array([0,1,N+2,N+1,2*N+2,3*N+3]).reshape(6,1)
-                inc = inc + 6
-            else:
-                #Non-exploding scaling: (1 + k5f)X0 - X1 - Y1 + Y0 = 0
-                entVal[inc:(inc+4)] = np.array([(1 + k5f),-1,-1,1]).reshape(4,1)
-                rowID[inc:(inc+4)] = np.array([0,0,0,0]).reshape(4,1)
-                colID[inc:(inc+4)] = np.array([0,1,N+2,N+1]).reshape(4,1)
-                inc = inc + 4
-            #Nernst for Y: (k1f/k1b)X0 - Y0 = 0 row@Y0
-            entVal[inc:(inc+2)] = np.array([(k1f/k1b),-1]).reshape(2,1)
-            rowID[inc:(inc+2)] = np.array([N+1,N+1]).reshape(2,1)
-            colID[inc:(inc+2)] = np.array([0,N+1]).reshape(2,1)
-            inc = inc + 2
-        else:
-            #kinetic for X: (1/k1b + k1f/k1b + k5f/k1b)X0 - (1/k1b)X1 - Y0 ...
-            #... - (u0*k5b/kb1)W0 - (w0*k5b/kb1)*U0 = -(k5b/kb1)(u0w0), row@X0
-            entVal[inc:(inc+2)] = np.array([((1/k1b)+(k1f/k1b)+(k5f/k1b)),(-1/k1b)]).reshape(2,1)
-            entVal[(inc+2):(inc+5)] = np.array([-1,(-u0*k5b/k1b),-(w0*k5b/k1b)]).reshape(3,1)
-            rowID[inc:(inc+5)] = np.array([0,0,0,0,0]).reshape(5,1)
-            colID[inc:(inc+5)] = np.array([0,1,N+1,2*N+2,3*N+3]).reshape(5,1)
-            inc = inc + 5
-            #kinetic for Y: (1/k1f + k1b/k1f)Y0 - (1/k1f)Y1 - X0 = 0, row@Y0
-            entVal[inc:(inc+3)] = np.array([((1/k1f)+(k1b/k1f)),(-1/k1f),-1]).reshape(3,1)
-            rowID[inc:(inc+3)] = np.array([N+1,N+1,N+1]).reshape(3,1)
-            colID[inc:(inc+3)] = np.array([N+1,N+2,0]).reshape(3,1)
-            inc = inc + 3
-        if k3f ==0:
-            #Kinetic for W: (1/k5f + u0*k5b/k5f)W0 - (1/k5f)W1 - X0 + (w0*k5b/k5f)U0 = (k5b/k5f)(u0w0), row@W0
-            entVal[inc:(inc+2)] = np.array([(1/k5f + u0*k5b/k5f),(-1/k5f)]).reshape(2,1)
-            entVal[(inc+2):(inc+4)] = np.array([-1,(w0*k5b/k5f)]).reshape(2,1)
-            rowID[inc:(inc+4)] = np.array([2*N+2,2*N+2,2*N+2,2*N+2]).reshape(4,1)
-            colID[inc:(inc+4)] = np.array([2*N+2,2*N+3,0,3*N+3]).reshape(4,1)
-            inc = inc + 4
-            #Equal flux for U: W1 - W0 + U0 - U1 = 0  row@U0
-            entVal[inc:(inc+4)]= np.array([1,-1,1,-1]).reshape(4,1)
-            rowID[inc:(inc+4)]= np.array([3*N+3,3*N+3,3*N+3,3*N+3]).reshape(4,1)
-            colID[inc:(inc+4)]= np.array([2*N+3,2*N+2,3*N+3,3*N+4]).reshape(4,1)
-            inc = inc + 4
-        elif FcEq[2] == 1:
-            #Kinetic for W: (1/k5f + 2*u0*k5b/k5f)W0 - (1/k5f)W1 - 2X0 + ...
-            #... +(1/k5f + 2*w0*k5b/k5f)U0 - (1/k5f)U1 = 2k5b/k5f(u0w0) row@W0
-            entVal[inc:(inc+3)] = np.array([((1/k5f)+(2*u0*k5b/k5f)),(-1/k5f),-2]).reshape(3,1)
-            entVal[(inc+3):(inc+5)] = np.array([((1/k5f)+(2*w0*k5b/k5f)),(-1/k5f)]).reshape(2,1) 
-            rowID[inc:(inc+5)] = np.array([2*N+2,2*N+2,2*N+2,2*N+2,2*N+2]).reshape(5,1)
-            colID[inc:(inc+5)] = np.array([2*N+2,2*N+3,0,3*N+3,3*N+4]).reshape(5,1)
-            inc = inc + 5
-            #Nernst for U: (k3f/k3b)W0 - U0 = 0, row@U0
-            entVal[inc:(inc+2)] = np.array([(k3f/k3b),-1]).reshape(2,1) 
-            rowID[inc:(inc+2)] = np.array([3*N+3,3*N+3]).reshape(2,1)
-            colID[inc:(inc+2)] = np.array([2*N+2,3*N+3]).reshape(2,1)
-            inc = inc + 2
-        else:
-            #Kinetic for W: (1/k3b + u0*k5b/k3b + k3f/k3b)W0 - (1/k3b)W1 ...
-            #... - (k5f/k3b)X0 + (w0*k5b/k3b - 1)U0 = k5b/k3b(u0w0) row@W0
-            entVal[inc:(inc+2)] = np.array([((1/k3b)+(u0*k5b/k3b)+(k3f/k3b)),(-1/k3b)]).reshape(2,1)
-            entVal[(inc+2):(inc+4)] = np.array([(-k5f/k3b),((w0*k5b/k3b) - 1)]).reshape(2,1)
-            rowID[inc:(inc+4)] = np.array([2*N+2,2*N+2,2*N+2,2*N+2]).reshape(4,1)
-            colID[inc:(inc+4)] = np.array([2*N+2,2*N+3,0,3*N+3]).reshape(4,1)
-            inc = inc + 4
-            #Overall flux balance for U: X1-X0+Y1-Y0-0.5U1+0.5U0-0.5W1+0.5W0=0 row@U0
-            entVal[inc:(inc+8)] = np.array([1,-1,1,-1,-0.5,0.5,-0.5,0.5]).reshape(8,1)
-            rowID[inc:(inc+8)] = np.array([3*N+3,3*N+3,3*N+3,3*N+3,3*N+3,3*N+3,3*N+3,3*N+3]).reshape(8,1)
-            colID[inc:(inc+8)] = np.array([1,0,N+2,N+1,3*N+4,3*N+3,2*N+3,2*N+2]).reshape(8,1)
-            inc = inc + 8
+    #Begin incrementer - this essentially defines the 'scheme' for introducing new entries
+    entVal[inc:(inc+5)] = np.array([1,1,1,1,1]).reshape(5,1)
+    rowID[inc:(inc+5)] =np.array([N,2*N+1,3*N+2,4*N+3,5*N+4]).reshape(5,1)
+    colID[inc:(inc+5)] = np.array([N,2*N+1,3*N+2,4*N+3,5*N+4]).reshape(5,1)
+    inc += 5
+    #Following through same logic path as above, now implementing variable equations. 
+    if k5f ==0: #NO concerted reaction (simpler equations)
+        #X BCs. Nernst equation: (k1f/k1b)X0 - Y0 = 0, 2 pts @ row X0
+        opt_Nernst_r1 = np.array([[k1f/k1b,-1.0],2*[0],[0,N+1]]) #Contains entries/rowIDs/colIDs for Nernst BC.
+        #Kinetic equation: 
+        opt_Kinetic_r1 = np.array([[(1.0+k1f),-1.0,-k1b],3*[0],[0,1,N+1]]) #Contains "" for kinetic BC. length = # of points. 
+        choose = {True:opt_Nernst_r1,False:opt_Kinetic_r1}
+        XBC = choose.get(FcEq[0]==1,'default')
+        #Y BCs. Opposite-flux: X1 - X0 + Y1 - Y0 = 0, 4 pts @ row Y0
+        YBC = np.array([[1.0,-1.0,1.0,-1.0],4*[N+1],[1,0,N+2,N+1]])
+        #W BCs. Nernst equation: (k3f/k3b)W0 - U0 = 0, 2 pts @ row @W0
+        opt_Nernst_r3 = np.array([[k3f/k3b,-1.0],2*[2*N+2],[2*N+2,3*N+3]])
+        #Kinetic equation:  (1 + k3f)W0 - W1 - k3b*U0 = 0, 3 pts # row W0
+        opt_Kinetic_r3 = np.array([[(1.0 + k3f),-1.0,-k3b],3*[2*N+2],[2*N+2,2*N+3,3*N+3]])    
+        #Simplifies to no-flux if k3f = 0 - no need for a k3f == 0 option.
+        choose = {True:opt_Nernst_r3,False:opt_Kinetic_r3}
+        WBC = choose.get(FcEq[2]==1,'default')
+        #U BCs. Equal-flux to W equation: W1 - W0 + U1 - U0 = 0, 4 pts @ U0
+        UBC = np.array([[1.0,-1.0,1.0,-1.0],4*[3*N+3],[2*N+3,2*N+2,3*N+4,3*N+3]])
+    else: #Concerted reaction - more complicated equations. 
+        #X BCs: rxn1 Nernst w/concert: (1 + k5f)X0 - X1 - Y1 + Y0 - k5b*(u0)W0 - k5b(w0)U0 = -(w0u0), 6 pts @ row X0
+        opt_Nernst_r1Xct = np.array([[(1.0 + k5f),-1.0,-1.0,1.0,-k5b*u0,-k5b*w0],6*[0],[0,1,N+2,N+1,2*N+2,3*N+3]])
+        #rxn 1 kinet w/ concert: (1 + k1f + k5f)X0 - X1 - k1bY0 -(u0*k5b)W0 - (w0*k5b)U0 = -k5b(u0w), 5 pts @ row X0
+        opt_Kinetic_r1Xct = np.array([[(1.0 + k1f + k5f),-1.0,-k1b,-k5b*u0,-k5b*w0],5*[0],[0,1,N+1,2*N+2,3*N+3]])
+        #Y BCs: Nernst constraint: (k1f/k1b)X0 - Y0 = 0, 2 pts @ row Y0
+        opt_Nernst_r1Yct = np.array([[(k1f/k1b),-1.0],2*[N+1],[0,N+1]])
+        #Full kinetic: (1 + k1b)Y0 - Y1 - k1fX0 = 0, 3 pts @ row Y0, goes to no-flux if k1f = 0. 
+        opt_Kinetic_r1Yct = np.array([[(1.0 + k1b),-1.0,-k1f],3*[N+1],[N+1,N+2,0]])
+        choose = {True:[opt_Nernst_r1Xct,opt_Nernst_r1Yct],False:[opt_Kinetic_r1Xct,opt_Kinetic_r1Yct]}
+        XYBC = choose.get(FcEq[0]==1,'default')
+        XBC = XYBC[0]
+        YBC = XYBC[1]
+        #W BCs: rxn3 Nernst w/concert: (1 + 2u0*k5b)W0 - W1 -2*k5f*X0 + (1 + 2*w0*k5b)*U0 - U1 = 2k5b*u0*w0, 5 pts @ row W0
+        opt_Nernst_r3Wct = np.array([[(1.0 + 2*u0*k5b),-1.0,-2*k5f,(1.0 + 2*w0*k5b),-1.0],5*[2*N+2],[2*N+2,2*N+3,0,3*N+3,3*N+4]])
+        #W BCs: rxn3 Kinetic w/concert: (1 + u0*k5b + k3f)W0 - W1 - k5f*X0 + (w0*k5b - k3b)U0 = k5b(u0w0), 4 pts @ row W0
+        opt_Kinetic_r3Wct = np.array([[(1 + u0*k5b + k3f),-1.0,-k5f,(w0*k5b - k3b)],4*[2*N+2],[2*N+2,2*N+3,0,3*N+3]])
+        #U BCs: rxn3 Nernst w/ concert: k3f/k3b * W0 - U0 = 0, 2 pts @ row U0
+        opt_Nernst_r3Uct = np.array([[k3f,-k3b],2*[3*N+3],[2*N+2,3*N+3]])
+        #U BCs: rxn3 Kinetic w/concert: X1 - X0 + Y1 - Y0 - 0.5U1 + 0.5 U0 - 0.5 W1 + 0.5 W0 = 0, 8 pts @ row W0
+        tg = {True:0,False:1}.get(k3f==0,'default') #Toggle that enables 'equal flux' if k3f = 0
+        opt_Kinetic_r3Uct = np.array([[tg,-tg,tg,-tg,-0.5,0.5,-0.5,0.5],8*[3*N+3],[1,0,N+2,N+1,3*N+4,3*N+3,2*N+3,2*N+2]])
+        choose = {True:[opt_Nernst_r3Wct,opt_Nernst_r3Uct],False:[opt_Kinetic_r3Wct,opt_Kinetic_r3Uct]}
+        WUBC = choose.get(FcEq[2]==1,'default')
+        WBC = WUBC[0]
+        UBC = WUBC[1]
+    #ZBC: No flux: Z1 - Z0 = 0, 2 points @ row Z0
+    ZBC = np.array([[1.0,-1.0],2*[4*N+4],[4*N+5,4*N+4]])
+    #Combine all results...
+    results = [XBC,YBC,WBC,UBC,ZBC]
+    for result in results:
+        pts = np.shape(result)[1]
+        entVal[inc:(inc+pts)] = result[0,::].reshape(pts,1)
+        rowID[inc:(inc+pts)] = result[1,::].reshape(pts,1)
+        colID[inc:(inc+pts)] = result[2,::].reshape(pts,1)
+        inc += pts
     
-    #Assign no-flux for Z: Z1 - Z0 = 0, row@Z0
-    entVal[inc:(inc+2)] = np.array([1,-1]).reshape(2,1)
-    rowID[inc:(inc+2)] = np.array([4*N+4,4*N+4]).reshape(2,1)
-    colID[inc:(inc+2)] = np.array([4*N+5,4*N+4]).reshape(2,1)
-    inc = inc + 2
-          
     #For peeping at boundary conditions      
     #entVal = entVal.flatten()
     #rowID = rowID.flatten()
@@ -579,13 +396,13 @@ def makeMat(C0,kVect,Dm,dt,FcEq,N,Dv,dx1,Cb):
         entVal[inc:(inc+(N-1))] = -Dm[1:N,1].reshape(N-1,1)
         rowID[inc:(inc+(N-1))] = rowVector
         colID[inc:(inc+(N-1))] = rowVector + 1
-        inc = inc + (N-1)
+        inc += (N-1)
         #Add (i-1) term
         entVal[inc:(inc+(N-1))] = -Dm[1:N,0].reshape(N-1,1)
         rowID[inc:(inc+(N-1))] = rowVector 
         colID[inc:(inc+(N-1))] = rowVector - 1
-        inc = inc + (N-1)
-        #Compute catalytic term by assigning ACF (autocatalytic factor)
+        inc += (N-1)
+        #Compute catalytic term by assigning ACF (autocatalytic factor)        
         if ss == 1: #Species Y
             ACF = k2f*dt
         elif ss == 2: #Species W

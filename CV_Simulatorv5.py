@@ -10,7 +10,7 @@ import numpy as np
 #from scipy import optimize as spopt
 import math
 import matplotlib.pyplot as MP
-import CV_SimulatorFcnsv4 as fx
+import CV_SimulatorFcnsv5 as fx
 from scipy import optimize as spopt
 import time
 
@@ -26,7 +26,7 @@ def simCV(value):
     #U + (H2O )= Z + (H3O+) (k4) Chemical
     #Assumed constant and high concentration of (H2O) and (H3O+) throughout - pseudo first order
     #X = W + U + e (k5) Electro-chemical (concerted reaction)
-    #Y = U (k6) Alternative Chemical step (unimolecular), for CE support.  
+    #Y = W (k6) Alternative Chemical step (unimolecular), for CE support.  
     
     #Timing, clear figures, import physical constants
     tic = time.time()
@@ -52,8 +52,8 @@ def simCV(value):
     Emax = 3.0 #V - Max voltage 
     Emin = 1.0 #V - Min voltage 
     nu = 10 ** (value) #V/s- Sweep rate
-    cycles = 2 #Number of CV cycles (1+)
-    LSweep = 0 #Toggle. If (1), Experiment is Ei -> Emax, if (0) use full CV cycle.
+    cycles = 1 #Number of CV cycles (1+)
+    LSweep = 1 #Toggle. If (1), Experiment is Ei -> Emax, if (0) use full CV cycle.
     #Set bulk/initial concentrations of species. Only X is present for E, E', EC, only Y for CE. 
     Cb = np.array([0.01,0.0,0.0,0.0,0.0]) #M - concs. for species X, Y, W, U, Z
     
@@ -64,7 +64,7 @@ def simCV(value):
     secDeriv = 0 #(1) Perform second derivative analysis on linear sweep (required), (0) do not. 
     stepCheck = 1 #(1) Perform step resolution check to ensure good dE convergence, (0) do not.
     stepPlot = 1 #(1) Plot stored (final) resolution deviations at end of computation, (0) do not.
-    freeGrid = 0 #(1) Use dynamically-generated voltage grid, (0) do not. 
+    freeGrid = 1 #(1) Use dynamically-generated voltage grid, (0) do not. 
     adaptStep = 1 #(1) Use adaptive timestepping with dynamic grid, (0) do not. 
     nonLin = 0 #(1) Always use nonlinear solver, (0) do not. 
     nonLinCorr = 0 #(1) Use nonlinear solver in case of high resErr / solver failure, (0) do not. 
@@ -76,10 +76,10 @@ def simCV(value):
     secDerivBurn = 100 # Number of initial points to ignore for second derivative analysis (helps avoid false zeroes). Set to 1 for no burn.
     dx_max = 10 ** (-10) #m - maximum allowable 'dx' spacing (Empirical, may change)
     Nmin = 40 #Minimum allowable # of points in space grid
-    dE_i = 0.001 #V, initial voltage grid spacing. Without free grid, fixes all voltage points. 
+    dE = 0.001 #V, initial voltage grid spacing. Without free grid, fixes all voltage points. 
     dE_max = 0.005 #V, maximum allowable grid spacing in freeGrid
     dE_min = 10 ** (-4) #V, minimum allowable grid spacing in freeGrid
-    stepErrTol = 0.001 # -, minimum allowable fractional deviation
+    stepErrTol = 0.0001 # -, minimum allowable fractional deviation
     minDev = (10 ** (-6))*Cb[0] #M, absolute threshold for concentration deviations to be considered 'relevant' in resCheck
     BT = 0.25 #(Beta) Spatial grid exp. coeff, 0 < BT < 1. 0 = linear, 1 = max. Lower = more accurate, 0.25-0.5 typ. 
     
@@ -94,7 +94,6 @@ def simCV(value):
     #Turn s off adaptive timestepping if freeGrid or resCheck is disabled (default is do not do it!)
     if freeGrid == 0 or stepCheck == 0:
         adaptStep = 0
-        #print('Adaptive timestepping disabled')
     #Turns off resPlot if resCheck is not enabled since the plot will be all zeros. 
     if stepCheck == 0:
         stepPlot = 0
@@ -135,13 +134,11 @@ def simCV(value):
     #Create Dm matrix for function use, each column = +/- from "center point."
     Dmu = np.concatenate([D1i,D2i],axis=1) #1/s
     ChemProdMax = 0.0 #Allocate space for this value which is tracked. 
-    dE = dE_i #Allocate dE variable
     count = 0 #Allocate counter variable
     
     ############################ SOLUTION OF EQUATIONS ######################
     if freeGrid == 0:
-    ############################# FIXED-GRID SOLUTION ########################
-        #Indentation for all-Fixed-Grid solution. 
+        ############################# FIXED-GRID SOLUTION #######################
         #Scale diffusion coefficients, dt, accordingly. dE will not change.
         dt = dE/nu
         Dm = Dmu*dt
@@ -165,9 +162,8 @@ def simCV(value):
         stepErrStor = 0.0*Evt
         for E in Evt: #E represents the next concentration point's
             #Indentation for computation loop.
-            #Set error / failure toggle
+            #Set error
             stepErr = 0
-            failed = 0
             #Compute electrochemically dependent rates
             kVectxx = quickRate(E)
             #Compute rates at half-step position
@@ -177,23 +173,14 @@ def simCV(value):
             if nonLin == 0:
                 #Try computing concentrations @ E.
                 #Any references to 'C' at this point are no longer valid!
-                try:
-                    Cxx = fx.MatSolve(C,kVectxx,Dm,dt,FcEq,N,Dv,dx1,Cb)
-                    #If the resolution check is on, try computing @ Ex. 
-                    if stepCheck == 1:
-                        Cx1 = fx.MatSolve(C,kVectx,0.5*Dm,0.5*dt,FcEq,N,Dv,dx1,Cb)
-                        Cx2 = fx.MatSolve(Cx1,kVectxx,0.5*Dm,0.5*dt,FcEq,N,Dv,dx1,Cb)
-                except:
-                    #If any of them have failed, the thing fails. 
-                    failed = 1
+                Cxx = fx.MatSolve(C,kVectxx,Dm,dt,FcEq,N,Dv,dx1,Cb)
+                #If the resolution check is on, try computing @ Ex. 
+                if stepCheck == 1:
+                    Cx1 = fx.MatSolve(C,kVectx,0.5*Dm,0.5*dt,FcEq,N,Dv,dx1,Cb)
+                    Cx2 = fx.MatSolve(Cx1,kVectxx,0.5*Dm,0.5*dt,FcEq,N,Dv,dx1,Cb)
+                    stepErr = compResError(Cxx,Cx2,N,minDev)
                 #Compute step-error metric. Why here? so that we can trigger nonlin if desired. 
-                if failed == 0 and stepCheck == 1:
-                    #Didn't fail, do want to check res.
-                    stepErr = compResError(Cxx, Cx2, N, minDev)
-                elif failed == 1 and stepCheck == 1:
-                    #This is the failure condition - resErr will be above tol. 
-                    stepErr = 10
-            if nonLin == 1 or ((failed == 1 or stepErr > stepErrTol) and nonLinCorr == 1):
+            if nonLin == 1 or (stepErr > stepErrTol and nonLinCorr == 1):
                 #If nonLin is on, OR if it's failed/above tolerance (something wrong) and nonlinCorr is on. 
                 #Always use the starting conc as the guess to avoid NAN issues with failed == 1
                 fcnxx = lambda cc: fx.NonLinEval(cc,C,kVectxx,Dm,dt,FcEq,N,Dv,dx1,Cb)
@@ -210,25 +197,22 @@ def simCV(value):
             #Store current
             Istor[count] = F*Dv[0]*(Cxx[1] - Cxx[0])/dx1 #+ more terms...
             #Generate plot
-            if count %dispFreq == 0 and showPlots == 1:
+            if (count % dispFreq) == 0 and showPlots == 1:
                 makePlot(Cxx,E,N,xgrid)
             #Track maximum of chemical-step product (useful convergence metric)
-            ChemProd = C[2*N+2]
-            if ChemProd > ChemProdMax:
-                ChemProdMax = ChemProd
+            ChemProdMax = max(ChemProdMax,C[2*N+2])
             #Update concentration, count
             C = Cxx
             count += 1
         #No post-run correction needed, since Evt/Istor already in desired format
     else:
-    ############################# FREE-GRID SOLUTION ########################
-        #Indentation level for varible-grid solution. 
-        #SEt the current voltage
+        ############################# FREE-GRID SOLUTION ########################
+        #Set the current voltage
         E = Ei
         #Estimate the max # of points required... 
         pointsReq = np.round(3*cycles*(Emax-Emin)/dE_min,0)
         #Preallocate space for voltages, currents, and resErrs
-        Evt_tmp = 0.0*np.arange(0.0,pointsReq,1.0).reshape(int(pointsReq),1) #Huge overestimate of space
+        Evt_tmp = 0.0*np.arange(0.0,pointsReq,1.0) #Huge overestimate of space
         Istor_tmp = 0.0*Evt_tmp
         stepErrStor_tmp = 0.0*Evt_tmp
         #Compute the display frequency in an ad-hoc manner...
@@ -248,22 +232,19 @@ def simCV(value):
                 #Indentation level for in-cycle solving...
                 converged = 0 #dE and dE/2 have similar convergence
                 rescaled = 0 #dE has not been adjusted
-                failed = 0 #All solver have passed well
-                failcount = 0 #Counter of # of failures
                 while converged == 0:
-                    #Indentation level for single-point resolution
                     #Get two relevant voltages, E + dE (Exx) and E + dE/2 (Ex)
                     Exx = E + dE
                     #Apply corrective bounding. 
                     #Why the 0.9999? To prevent a step of 0.0001, basically. 
-                    if Exx >= 0.99*Emax and dE > 0:
+                    if Exx >= 0.9999*Emax and dE > 0:
                         #If the step would take it over the top - stop at the top. 
                         Exx = Emax
-                    elif 1.01*Emin >= Exx and dE < 0:
+                    elif 1.0001*Emin >= Exx and dE < 0:
                         #If the step would take it below the minimum - stop at the minimum
                         Exx = Emin
                         min_done = 1
-                    elif min_done == 1 and Exx >= 0.99*Ei:
+                    elif min_done == 1 and Exx >= 0.9999*Ei:
                         #Make sure that we return the voltage back to the Ei between cycles. 
                         Exx = Ei
                     #Compute rates at Exx
@@ -273,11 +254,7 @@ def simCV(value):
                     #Rescale diffusion coefficient matrix accordingly
                     Dm = Dmu*dt
                     #Need to fix this function input...
-                    try:
-                        Cxx = fx.MatSolve(C,kVectxx,Dm,dt,FcEq,N,Dv,dx1,Cb)
-                    except:
-                        failed = 1
-                        failcount += 1
+                    Cxx = fx.MatSolve(C,kVectxx,Dm,dt,FcEq,N,Dv,dx1,Cb)
                     stepErr = 0
                     if stepCheck == 1:
                         #Indentation level for res check
@@ -286,16 +263,12 @@ def simCV(value):
                         #Also compute rates @Ex
                         kVectx = quickRate(Ex)
                         #Compute the two-step
-                        try:
-                            Cx1 = fx.MatSolve(C,kVectx,0.5*Dm,0.5*dt,FcEq,N,Dv,dx1,Cb)
-                            Cx2 = fx.MatSolve(C,kVectxx,0.5*Dm,0.5*dt,FcEq,N,Dv,dx1,Cb)
-                        except:
-                            failed = 1
-                            failcount += 1
+                        Cx1 = fx.MatSolve(C,kVectx,0.5*Dm,0.5*dt,FcEq,N,Dv,dx1,Cb)
+                        Cx2 = fx.MatSolve(C,kVectxx,0.5*Dm,0.5*dt,FcEq,N,Dv,dx1,Cb)
                         #Compute the deviations here
                         stepErr = compResError(Cxx, Cx2, N, minDev)
                     #Returning to out of res-check indentation - resolve loop.
-                    if (stepErr > stepErrTol and failed == 0) or failcount > 5:
+                    if (stepErr > stepErrTol):
                         #There is some sort of problem here. 
                         if adaptStep == 0:
                             #Don't fix it. 
@@ -304,7 +277,8 @@ def simCV(value):
                             #Has it already failed?
                             if rescaled == 1 and abs(dE) == dE_min:
                                 #Conditions that means it has failed before but already at minimum.
-                                #print('Failed at voltage: ',str(np.round(E,5)))
+                                #print('Rescale issue at voltage: ',str(np.round(E,5)))
+                                #Continuing with the error still present is often the best strategy
                                 converged = 1
                             else:
                                 #Attempt to fix it by shrinking step size
@@ -312,7 +286,7 @@ def simCV(value):
                                 if abs(dE) < dE_min:
                                     dE = (dE/abs(dE))*dE_min
                                 rescaled = 1
-                    elif (stepErr < stepErrTol and failed == 0):
+                    else:
                         #If the error is low and it has not failed - OK to converge.
                         converged = 1
                         if rescaled == 0 and adaptStep == 1:
@@ -321,18 +295,13 @@ def simCV(value):
                         #Prevent dE from going over the maximum while retaining sign
                         if abs(dE) > dE_max:
                                 dE = (dE/abs(dE))*dE_max
-                    else: 
-                        #This means that it has failed but not >5 times - try restarting.
-                        failed = 0
                 #This level of indentation is outside the while loop - the result is converged. 
                 #Store the voltage, current, and error of this last computation
                 Evt_tmp[count] = Exx
                 Istor_tmp[count] = F*Dv[0]*(Cxx[1] - Cxx[0])/dx1 # + more stuff
                 stepErrStor_tmp[count] = stepErr
                 #Store the maximum chem. prod
-                ChemProd = C[2*N+2]
-                if ChemProd > ChemProdMax:
-                    ChemProdMax = ChemProd
+                ChemProdMax = max(ChemProdMax,C[2*N+2])
                 #Create plots, if appropriate
                 if count %dispFreq == 0 and showPlots == 1:
                     makePlot(Cxx,E,N,xgrid)
@@ -457,7 +426,7 @@ def compResError(C1,C2,N,minDev):
         return 0
     
 def getConstants(F,R,T,optn):
-    DtGv = np.array([10.0,15.0,12.0,10.0,45.0]) # kcal/mol, Delta G for rxns 1,2,3,4,5
+    DtGv = np.array([10.0,15.0,12.0,10.0,45.0,15.0]) # kcal/mol, Delta G for rxns 1,2,3,4,5,6
     if optn == 0: #rate constants
         Kv = np.exp(-DtGv/(R*T)) # Eq. constant, rxns 1->5
         #Manually reset Eq. constants if desired
@@ -472,11 +441,14 @@ def getConstants(F,R,T,optn):
         k3s = 0.0 #m/s - Surf., rxn 3
         k4f  = 0.0 #(1/(sM))*(M) - Homog., Pseudo-first order w/ const. (H2O), rxn 4
         k4b = k4f/Kv[3] #Reverse homog., Pseudo-first order w/ const. 
-        k5s = 0.0 #m/s Surf., concerted rxn 5
+        k5s = 10.0 #m/s Surf., concerted rxn 5
+        k6f = 10 ** (0) #1/s - Homog., first order, rxn 2
+        k6b = k6f/Kv[5]
         #Manually reset reverse rxns if desired
         #k2b = 0
         k4b = 0
-        return np.array([k1s,k2f,k2b,k3s,k4f,k4b,k5s])
+        k6b = 0
+        return np.array([k1s,k2f,k2b,k3s,k4f,k4b,k5s,k6f,k6b])
     elif optn == 1: #Potentials
         #Import electrochemical information. All reactions assumed to have single electron transfer. 
         #Reversible (oxidation) potentials for the 3 echem reactions - compute from thermochemistry. 
@@ -503,11 +475,8 @@ def getConstants(F,R,T,optn):
         Dz = 10 ** (-9)
         return np.array([Dx,Dy,Dw,Du,Dz])
     else: #Equilibrium array
-        #Each toggle is a reaction ri: [(r1),(r2),(r3),(r4)]. (1) uses eq., (0) uses kinetic equations
-        return np.array([0,0,0,0])
-
-#def genGrid(,option):
-    
+        #Each toggle is a reaction ri: [(r1),(r2),(r3),(r4),(r5),(r6)]. (1) uses eq., (0) uses kinetic equations
+        return np.array([0,0,0,0,0,0])
 
 def computeRates(E,VT,E0v,Bsv,kconv):
     k1f = kconv[0]*np.exp((E-E0v[0])*VT*(1 - Bsv[0]))
@@ -516,7 +485,7 @@ def computeRates(E,VT,E0v,Bsv,kconv):
     k3b = kconv[3]*np.exp(-(E-E0v[1])*VT*Bsv[1])
     k5f = kconv[6]*np.exp((E-E0v[2])*VT*(1 - Bsv[2]))
     k5b = kconv[6]*np.exp(-(E-E0v[2])*VT*Bsv[2])
-    return np.array([k1f,k1b,kconv[1],kconv[2],k3f,k3b,kconv[4],kconv[5],k5f,k5b])
+    return np.array([k1f,k1b,kconv[1],kconv[2],k3f,k3b,kconv[4],kconv[5],k5f,k5b,kconv[7],kconv[8]])
 
 def makePlot(C,E,N,xgrid):
     MP.figure(1)
@@ -535,7 +504,7 @@ def makePlot(C,E,N,xgrid):
     MP.close(1)  
 
 #Run single-value experiment
-simCV(0.0)
+simCV(-3.0)
 #Establish value vector of specified #s
 #valVect = np.array([0.005,0.0025,0.001,0.0005,0.00025])
 #valVect = np.array([0.0025,0.001,0.0005,0.00025,0.0001,0.00005,0.000025,0. ])
