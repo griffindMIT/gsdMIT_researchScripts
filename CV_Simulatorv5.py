@@ -64,7 +64,7 @@ def simCV(value):
     secDeriv = 0 #(1) Perform second derivative analysis on linear sweep (required), (0) do not. 
     stepCheck = 1 #(1) Perform step resolution check to ensure good dE convergence, (0) do not.
     stepPlot = 1 #(1) Plot stored (final) resolution deviations at end of computation, (0) do not.
-    freeGrid = 1 #(1) Use dynamically-generated voltage grid, (0) do not. 
+    freeGrid = 0 #(1) Use dynamically-generated voltage grid, (0) do not. 
     adaptStep = 1 #(1) Use adaptive timestepping with dynamic grid, (0) do not. 
     nonLin = 0 #(1) Always use nonlinear solver, (0) do not. 
     nonLinCorr = 0 #(1) Use nonlinear solver in case of high resErr / solver failure, (0) do not. 
@@ -177,7 +177,7 @@ def simCV(value):
                 #If the resolution check is on, try computing @ Ex. 
                 if stepCheck == 1:
                     Cx1 = fx.MatSolve(C,kVectx,0.5*Dm,0.5*dt,FcEq,N,Dv,dx1,Cb)
-                    Cx2 = fx.MatSolve(Cx1,kVectxx,0.5*Dm,0.5*dt,FcEq,N,Dv,dx1,Cb)
+                    Cx2 = fx.MatSolve(Cx1.reshape(len(Cx1),1),kVectxx,0.5*Dm,0.5*dt,FcEq,N,Dv,dx1,Cb)
                     stepErr = compResError(Cxx,Cx2,N,minDev)
                 #Compute step-error metric. Why here? so that we can trigger nonlin if desired. 
             if nonLin == 1 or (stepErr > stepErrTol and nonLinCorr == 1):
@@ -194,15 +194,16 @@ def simCV(value):
                     stepErr = compResError(Cxx,Cx2,N,minDev)
             #Store the resErr
             stepErrStor[count] = stepErr
-            #Store current
-            Istor[count] = F*Dv[0]*(Cxx[1] - Cxx[0])/dx1 #+ more terms...
+            #Store current - Flux of X + (Flux of U - Flux of W)
+            #Flux of X for rxns 1, 5. (Flux of U - Flux of W) = 0 unless k3 =/= 0. Subject to some error here.
+            Istor[count] = F*Dv[0]*(Cxx[1] - Cxx[0])/dx1 + F*Dv[0]*(Cxx[3*N+4] - Cxx[3*N+3] - Cxx[2*N+3] + Cxx[2*N+2])/dx1
             #Generate plot
             if (count % dispFreq) == 0 and showPlots == 1:
                 makePlot(Cxx,E,N,xgrid)
             #Track maximum of chemical-step product (useful convergence metric)
-            ChemProdMax = max(ChemProdMax,C[2*N+2])
+            ChemProdMax = max(ChemProdMax,C[2*N+2][0])
             #Update concentration, count
-            C = Cxx
+            C = Cxx.reshape(len(Cxx),1)
             count += 1
         #No post-run correction needed, since Evt/Istor already in desired format
     else:
@@ -264,7 +265,7 @@ def simCV(value):
                         kVectx = quickRate(Ex)
                         #Compute the two-step
                         Cx1 = fx.MatSolve(C,kVectx,0.5*Dm,0.5*dt,FcEq,N,Dv,dx1,Cb)
-                        Cx2 = fx.MatSolve(C,kVectxx,0.5*Dm,0.5*dt,FcEq,N,Dv,dx1,Cb)
+                        Cx2 = fx.MatSolve(Cx1.reshape(len(Cx1),1),kVectxx,0.5*Dm,0.5*dt,FcEq,N,Dv,dx1,Cb)
                         #Compute the deviations here
                         stepErr = compResError(Cxx, Cx2, N, minDev)
                     #Returning to out of res-check indentation - resolve loop.
@@ -301,12 +302,12 @@ def simCV(value):
                 Istor_tmp[count] = F*Dv[0]*(Cxx[1] - Cxx[0])/dx1 # + more stuff
                 stepErrStor_tmp[count] = stepErr
                 #Store the maximum chem. prod
-                ChemProdMax = max(ChemProdMax,C[2*N+2])
+                ChemProdMax = max(ChemProdMax,C[2*N+2][0])
                 #Create plots, if appropriate
                 if count %dispFreq == 0 and showPlots == 1:
                     makePlot(Cxx,E,N,xgrid)
                 #Update concentrations, count variable
-                C = Cxx
+                C = Cxx.reshape(len(Cxx),1)
                 count += 1
                 
                 #Update dE/end condition, if necessary. 
@@ -387,8 +388,9 @@ def saveant(E0v,Bsv,F,R,T,nu,Dv,kConst,Cb):
     APP_ekin = E0v[0] + 0.78*R*T/((1 - Bsv[0])*F) - R*T*np.log(kConst[0]*np.sqrt(R*T/((1 - Bsv[0])*F*nu*Dv[0])))/((1 - Bsv[0])*F)
     APP_eeq = E0v[0] + 1.11*R*T/F
     APP_ec = 0
-    if kConst[2] > 0:
-        APP_ec = E0v[0] + 0.78*R*T/(F) - (R*T/(2*F))*np.log(R*T*kConst[2]/(F*nu))
+    if kConst[1] > 0 or kConst[7] > 0:
+        rconst = max(kConst[1],kConst[7])
+        APP_ec = E0v[0] + 0.78*R*T/(F) - (R*T/(2*F))*np.log(R*T*rconst/(F*nu))
     #Peak currents - kinetic, equilibrium (check these)
     APC_ekin = 0.496*F*Cb[0]*np.sqrt(Dv[0])*np.sqrt((1-Bsv[0])*F*nu/(R*T))
     APC_eq = 0.446*F*Cb[0]*np.sqrt(Dv[0])*np.sqrt((1-Bsv[0])*F*nu/(R*T))
@@ -436,16 +438,16 @@ def getConstants(F,R,T,optn):
         #For concerted reaction - forward/backward split influenced in symmetry coefficient. 
         #Set rxns with a decimal value or a power (recommended)
         k1s = 10 ** (0) #m/s - Surf., rxn 1
-        k2f = 10 ** (0) #1/s - Homog., first order, rxn 2 
+        k2f = 0.0 #10 ** (0) #1/s - Homog., first order, rxn 2 
         k2b = k2f/Kv[1] # 1/(sM) - Reverse homog., second order, rxn 2
         k3s = 0.0 #m/s - Surf., rxn 3
         k4f  = 0.0 #(1/(sM))*(M) - Homog., Pseudo-first order w/ const. (H2O), rxn 4
         k4b = k4f/Kv[3] #Reverse homog., Pseudo-first order w/ const. 
-        k5s = 10.0 #m/s Surf., concerted rxn 5
-        k6f = 10 ** (0) #1/s - Homog., first order, rxn 2
+        k5s = 0.0 #m/s Surf., concerted rxn 5
+        k6f = 1.0 #0 ** (0) #1/s - Homog., first order, rxn 2
         k6b = k6f/Kv[5]
         #Manually reset reverse rxns if desired
-        #k2b = 0
+        k2b = 0
         k4b = 0
         k6b = 0
         return np.array([k1s,k2f,k2b,k3s,k4f,k4b,k5s,k6f,k6b])
@@ -504,7 +506,7 @@ def makePlot(C,E,N,xgrid):
     MP.close(1)  
 
 #Run single-value experiment
-simCV(-3.0)
+simCV(-15.0)
 #Establish value vector of specified #s
 #valVect = np.array([0.005,0.0025,0.001,0.0005,0.00025])
 #valVect = np.array([0.0025,0.001,0.0005,0.00025,0.0001,0.00005,0.000025,0. ])
