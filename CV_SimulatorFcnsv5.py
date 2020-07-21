@@ -67,7 +67,7 @@ def NonLinEval(C,C0,kVect,Dm,dt,FcEq,N,Dv,dx1,Cb):
         #W BCs. Nernst equation: k3fW0 -k3bU0 = 0
         opt_Nernst_r3 = (k3f)*W[0] - k3b*U[0]
         #Kinetic equation:  (1 + k3f)W0 - W1 - k3b*U0 = 0
-        opt_Kinetic_r3 = np.array([[(1.0 + k3f),-1.0,-k3b],3*[2*N+2],[2*N+2,2*N+3,3*N+3]])    
+        opt_Kinetic_r3 = (1 + k3f)*W[0] - W[1] - k3b*U[0]
         #Simplifies to no-flux if k3f = 0 - no need for a k3f == 0 option.
         f[2*N+2] = {True:opt_Nernst_r3,False:opt_Kinetic_r3}.get(FcEq[2]==1)
         #U BCs. Equal-flux to W equation: W1 - W0 + U1 - U0 = 0
@@ -105,21 +105,6 @@ def NonLinEval(C,C0,kVect,Dm,dt,FcEq,N,Dv,dx1,Cb):
     Dm3 = 1 + Dm1 + Dm2
     
     #X, Y, W, U, Z. All equations are (i-1),(i+1) diffusion terms, (i) diffusion terms w/ SCF, and added rxn terms as described in makeMat
-    #X, ind = 1 to N-1
-        #Dm[3]X(i) - Dm[2]X(i+1) - Dm[1]X(i-1) = x(i)
-    #Y, ind =  N+2 to 2*N
-        #(Dm[3] + (k2f + k6f)*dt)Y(i) - Dm[2]Y(i+1) - Dm[1]Y(i-1) - k2b*dt*w(i)U(i) - ((k2b*u(i) + k6b)*dt)W(i)...
-        #... =  y(i) - k2b*dt*u(i)w(i)
-    #W, ind = 2*N+3 to 3*N+1
-        #(Dm[3] + (k2b*u(i) + k6b)*dt)W(i) - Dm[2]W(i+1) - Dm[1]W(i-1) - (k2f+k6f)*dt*Y(i)   ...
-        # ... + k2b*dt*w(i)U(i) = w(i)(1 + k2b*dt*u(i))
-    #U, ind = 3*N+4 to 4*N+2
-        #(Dm[3] + k2b*dt*w(i) + k4f*dt)U(i) - Dm[2]U(i+1) - Dm[1]U(i-1) - k2f*dt*Y(i) ...
-        # ... + k2b*dt*u(i)*W(i) - k4b*dt*Z(i) = u(i)(1 + k2b*dt*w(i))
-    #Z, ind = 4*N+5 to 5*N+3
-        #(Dm[3] + k4b*dt)Z(i) - Dm[2]Z(i+1) - Dm[1]Z(i-1) - k1f*dt*u(i) = z(i)
-    
-    
     f[1:N] = -Dm1*X[0:(N-1)] + Dm3*X[1:N] - Dm2*X[2:N+1] - X0[1:N]
     f[N+2:2*N+1] = -Dm1*Y[0:(N-1)] + (Dm3 + (k2f+ k6f)*dt)*Y[1:N] - Dm2*Y[2:N+1] - k2b*dt*W[1:N]*U[1:N] -k6b*dt*W[1:N] - Y0[1:N]
     f[2*N+3:3*N+2]= -Dm1*W[0:(N-1)] + (Dm3 + k6b*dt + k2b*dt*U[1:N])*W[1:N] - Dm2*W[2:N+1] -(k2f+k6f)*dt*Y[1:N] - W0[1:N]
@@ -175,7 +160,7 @@ def modC(C0,kVect,Dm,dt,FcEq,N,Dv,dx1,Cb):
     #Modification #2: Multiply W central points by (1 + k2b*dt*u(i))
     Ceql[specLow[2]:(specHigh[2]+1)] = np.multiply(Ceql[specLow[2]:(specHigh[2]+1)],(np.ones([N-1,1])+k4b*dt*upv))
     #Modification #3: Multiply U central points by (1 + k2b*dt*w(i))
-    Ceql[specLow[3]:(specHigh[3]+1)] = np.multiply(Ceql[specLow[2]:(specHigh[2]+1)],(np.ones([N-1,1])+k2b*dt*wpv))
+    Ceql[specLow[3]:(specHigh[3]+1)] = np.multiply(Ceql[specLow[3]:(specHigh[3]+1)],(np.ones([N-1,1])+k2b*dt*wpv))
     return Ceql
 
 def makeMat(C0,kVect,Dm,dt,FcEq,N,Dv,dx1,Cb):
@@ -247,8 +232,6 @@ def makeMat(C0,kVect,Dm,dt,FcEq,N,Dv,dx1,Cb):
         #Full kinetic: (1 + k1b)Y0 - Y1 - k1fX0 = 0, 3 pts @ row Y0, goes to no-flux if k1f = 0. 
         opt_Kinetic_r1Yct = np.array([[(1.0 + k1b),-1.0,-k1f],3*[N+1],[N+1,N+2,0]])
         XYBC = {True:[opt_Nernst_r1Xct,opt_Nernst_r1Yct],False:[opt_Kinetic_r1Xct,opt_Kinetic_r1Yct]}.get(FcEq[0]==1)
-        XBC = XYBC[0]
-        YBC = XYBC[1]
         #W BCs: rxn3 Nernst w/concert: (1 + 2u0*k5b)W0 - W1 -2*k5f*X0 + (1 + 2*w0*k5b)*U0 - U1 = 2k5b*u0*w0, 5 pts @ row W0
         opt_Nernst_r3Wct = np.array([[(1.0 + 2*u0*k5b),-1.0,-2*k5f,(1.0 + 2*w0*k5b),-1.0],5*[2*N+2],[2*N+2,2*N+3,0,3*N+3,3*N+4]])
         #W BCs: rxn3 Kinetic w/concert: (1 + u0*k5b + k3f)W0 - W1 - k5f*X0 + (w0*k5b - k3b)U0 = k5b(u0w0), 4 pts @ row W0
@@ -267,7 +250,7 @@ def makeMat(C0,kVect,Dm,dt,FcEq,N,Dv,dx1,Cb):
     results = [XBC,YBC,WBC,UBC,ZBC]
     for result in results:
         entryInc = entryUpdater(result,entryInc)
-    
+
     #For viewing boundary condition placement. Comment for production.
     #MPL.spy(spar.coo_matrix((entryInc[0][0,::],(entryInc[0][1,::],entryInc[0][2,::])),shape=((5*N+5),(5*N+5))).tocsr(),markersize=3)
     #MPL.show()
@@ -306,7 +289,7 @@ def makeMat(C0,kVect,Dm,dt,FcEq,N,Dv,dx1,Cb):
         #Add (i-1) diffusion term
         entryInc = entryUpdater(np.array([-Dm[1:N,0],rowVector,(rowVector-1)]),entryInc)
         #Assign SCF (self-cat. factor) for species: SCF for X, Y, W, U, Z.
-        SCF = {0:0 ,1:(k2f + k6f)*dt, 2:(k2b*upv + k6b)*dt, 3:(k2b*wpv + k4f)*dt, 4:k4b*dt}.get(ss)
+        SCF = {0:0, 1:(k2f + k6f)*dt, 2:(k2b*upv + k6b)*dt, 3:(k2b*wpv + k4f)*dt, 4:k4b*dt}.get(ss)
         #Add (i) self-diffusion term with SCF to account for reactions:
         entryInc = entryUpdater(np.array([(1 + Dm[1:N,0] + Dm[1:N,1] + SCF),rowVector,rowVector]),entryInc)
         #Add additional terms as required by the species (also v. hardcoded)
@@ -316,7 +299,7 @@ def makeMat(C0,kVect,Dm,dt,FcEq,N,Dv,dx1,Cb):
             #Term #2: -(k2b*u(i) + k6b)*dt on W(i) cols
             entryInc = entryUpdater(np.array([-(k2b*upv + k6b)*dt,rowVector,np.arange(specLow[2],(specHigh[2]+1))]),entryInc)
         elif ss == 2: #Species W, 2 terms
-            #Term #1: -(k2f+k6f)*dt, on Y(i) cols
+            #Term #1: -(k2f+k6f)*dt, on Y(i) cols - problem term
             entryInc = entryUpdater(np.array([-(k2f+k6f)*dt*np.ones([N-1]),rowVector,np.arange(specLow[1],(specHigh[1]+1))]),entryInc)
             #Term #2: k2b*dt*w(i), on U(i) cols. 
             entryInc = entryUpdater(np.array([k2b*dt*wpv,rowVector,np.arange(specLow[3],(specHigh[3]+1))]),entryInc)
