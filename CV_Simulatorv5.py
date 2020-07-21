@@ -55,7 +55,7 @@ def simCV(value):
     cycles = 1 #Number of CV cycles (1+)
     LSweep = 1 #Toggle. If (1), Experiment is Ei -> Emax, if (0) use full CV cycle.
     #Set bulk/initial concentrations of species. Only X is present for E, E', EC, only Y for CE. 
-    Cb = np.array([0.01,0.0,0.0,0.0,0.0]) #M - concs. for species X, Y, W, U, Z
+    Cb = np.array([0.0,0.01,0.0,0.0,0.0]) #M - concs. for species X, Y, W, U, Z
     
     ######################## COMPUTATIONAL TOGGLES ##########################
     #Toggles - changes mode of solver/computation or the information displayed
@@ -385,7 +385,9 @@ def getPeakPotl(Evt,Istor,cyc_inds,cycles):
 def saveant(E0v,Bsv,F,R,T,nu,Dv,kConst,Cb):
     #Analytical solutions from Saveant for kinetic & equilibrium control
     #Peak potentials - kinetic, equilibrium, "EC" mechanism
-    APP_ekin = E0v[0] + 0.78*R*T/((1 - Bsv[0])*F) - R*T*np.log(kConst[0]*np.sqrt(R*T/((1 - Bsv[0])*F*nu*Dv[0])))/((1 - Bsv[0])*F)
+    APP_ekin = 0
+    if kConst[0] > 0:
+        APP_ekin = E0v[0] + 0.78*R*T/((1 - Bsv[0])*F) - R*T*np.log(kConst[0]*np.sqrt(R*T/((1 - Bsv[0])*F*nu*Dv[0])))/((1 - Bsv[0])*F)
     APP_eeq = E0v[0] + 1.11*R*T/F
     APP_ec = 0
     if kConst[1] > 0 or kConst[7] > 0:
@@ -437,19 +439,19 @@ def getConstants(F,R,T,optn):
         #For kinetic reactions - forward/backward split determined by equilibrium info. 
         #For concerted reaction - forward/backward split influenced in symmetry coefficient. 
         #Set rxns with a decimal value or a power (recommended)
-        k1s = 10 ** (0) #m/s - Surf., rxn 1
+        k1s = 0.0 #10 ** (0) #m/s - Surf., rxn 1
         k2f = 0.0 #10 ** (0) #1/s - Homog., first order, rxn 2 
         k2b = k2f/Kv[1] # 1/(sM) - Reverse homog., second order, rxn 2
-        k3s = 0.0 #m/s - Surf., rxn 3
-        k4f  = 0.0 #(1/(sM))*(M) - Homog., Pseudo-first order w/ const. (H2O), rxn 4
+        k3s = 1.0 #m/s - Surf., rxn 3
+        k4f  = 1.0 #(1/(sM))*(M) - Homog., Pseudo-first order w/ const. (H2O), rxn 4
         k4b = k4f/Kv[3] #Reverse homog., Pseudo-first order w/ const. 
         k5s = 0.0 #m/s Surf., concerted rxn 5
-        k6f = 1.0 #0 ** (0) #1/s - Homog., first order, rxn 2
+        k6f = 1.0 ** (-10) #1/s - Homog., first order, rxn 2
         k6b = k6f/Kv[5]
         #Manually reset reverse rxns if desired
         k2b = 0
         k4b = 0
-        k6b = 0
+        #k6b = 0
         return np.array([k1s,k2f,k2b,k3s,k4f,k4b,k5s,k6f,k6b])
     elif optn == 1: #Potentials
         #Import electrochemical information. All reactions assumed to have single electron transfer. 
@@ -506,7 +508,7 @@ def makePlot(C,E,N,xgrid):
     MP.close(1)  
 
 #Run single-value experiment
-simCV(-15.0)
+simCV(0.0)
 #Establish value vector of specified #s
 #valVect = np.array([0.005,0.0025,0.001,0.0005,0.00025])
 #valVect = np.array([0.0025,0.001,0.0005,0.00025,0.0001,0.00005,0.000025,0. ])

@@ -7,7 +7,7 @@ Created on Sat Jun 20 15:44:31 2020
 
 #Import packages
 import numpy as np 
-#import matplotlib.pyplot as  - uncomment for debugging makeMat
+import matplotlib.pyplot as MPL
 import scipy.sparse as spar
 from scipy.sparse import linalg as sparL
 
@@ -44,6 +44,8 @@ def NonLinEval(C,C0,kVect,Dm,dt,FcEq,N,Dv,dx1,Cb):
     k4b = kVect[7]
     k5f = kVect[8]*dx1/Dv[0]
     k5b = kVect[9]*dx1/Dv[0]
+    k6f = kVect[10]
+    k6b = kVect[11]
     
     #Assign bulk constraints 
     f[N] = X[-1] - Cb[0]
@@ -54,84 +56,47 @@ def NonLinEval(C,C0,kVect,Dm,dt,FcEq,N,Dv,dx1,Cb):
     
     
     #Compute BC entries...
-    if k5f ==0:
-        if FcEq[0] ==1:
-            #Nernst for X: (k1f/k1b)*X0 - Y0 = 0, row@X0
-            #rowID[inc:(inc+2)] = np.array([0,0]).reshape(2,1)
-            f[0] = (k1f/k1b)*X[0] - Y[0]
-        else:
-            #Kinetic for X: (1/k1b + k1f/k1b)X0 - (1/k1b)X1 - Y0 = 0, row@X0
-            #rowID[inc:(inc+3)] = np.array([0,0,0]).reshape(3,1)          
-            f[0] = (1/k1b + k1f/k1b)*X[0] - (1/k1b)*X[1] - Y[0]
-        #Equal-flux for Y: X1 - X0 + Y1 - Y0 = 0, row@Y0
-        #rowID[inc:(inc+4)] = np.array([N+1,N+1,N+1,N+1]).reshape(4,1)
+    if k5f ==0: #NO concerted reaction (simpler equations)
+        #X BCs. Nernst equation: k1fX0 - k1bY0 = 0
+        opt_Nernst_r1 = k1f*X[0] - k1b*Y[0] 
+        #Kinetic equation: (1+k1f)X0 - X1 - k1bY = 0
+        opt_Kinetic_r1 = (1 + k1f)*X[0] - X[1] - k1b*Y[0]  
+        f[0] = {True:opt_Nernst_r1,False:opt_Kinetic_r1}.get(FcEq[0]==1)
+        #Y BCs. Opposite-flux: X1 - X0 + Y1 - Y0 = 0
         f[N+1] = X[1] - X[0] + Y[1] - Y[0]
-        if FcEq[2] ==1:
-            #Nernst for W: (k3f/k3b)W0 - U0 = 0, row@W0
-            #rowID[inc:(inc+2)] = np.array([2*N+2,2*N+2]).reshape(2,1)
-            f[2*N+2] = (k3f/k3b)*W[0] - U[0]
-            #Equal-flux for U: W1 - W0 + U1 - U0 = 0, row@U0
-            #rowID[inc:(inc+4)] = np.array([(3*N+3),(3*N+3),(3*N+3),(3*N+3)]).reshape(4,1) 
-            f[3*N+3] = W[1] - W[0] + U[1] - U[0]
-        elif k3f ==0:
-            #No flux for W: W1 - W0 = 0, row@W0
-            #rowID[inc:(inc+2)] = np.array([2*N+2,2*N+2]).reshape(2,1)
-            f[2*N+2] = W[1] - W[0]
-            #No flux for U: U1 - U0 = 0, row@U0
-            #rowID[inc:(inc+2)] = np.array([3*N+3,3*N+3]).reshape(2,1)
-            f[3*N+3] = U[1] - U[0]
-        else:
-            #Kinetic for W: (1/k3b + k3f/k3b)W0 - (1/k3b)W1 - U0 = 0, row@W0
-            #rowID[inc:(inc+3)] = np.array([2*N+2,2*N+2,2*N+2]).reshape(3,1)
-            f[2*N+2] = (1/k3b + k3f/k3b)*W[0] - (1/k3b)*W[1] - U[0] 
-            #Equal-flux for U: W1- W0 + U1 - U0 = 0, row@U0
-            #rowID[inc:(inc+4)] = np.array([(3*N+3),(3*N+3),(3*N+3),(3*N+3)]).reshape(4,1) 
-            f[3*N+3] = W[1] - W[0] + U[1] - U[0]
-    else:
-                #if k1f ==0:
-        #    if abs(k5b) > 0:
-        #        #kinetic for X: (1/k5b + k5f/k5b)X0 - (1/k5b)X1 - (u0)W0 - (w0)U0 = - (w0u0), row@X0
-        #        rowID[inc:(inc+4)] = np.array([0,0,0,0]).reshape(4,1)
-        #    else:
-        #        #Non-exploding scaling: (1 + k5f)X0 - X1 = 0
-        #        rowID[inc:(inc+2)] = np.array([0,0]).reshape(2,1)
-        #    #No flux for Y: Y1 - Y0 = 0 , row@Y0
-        #    rowID[inc:(inc+2)] = np.array([N+1,N+1]).reshape(2,1)
-        #elif FcEq[0] ==1:
-        #    if abs(k5b) > 0:
-        #        #Partial kin. for X: (1/k5b + k5f/k5b)X0 - (1/k5b)X1 - (1/k5b)Y1 + (1/k5b)Y0 ... 
-        #        #...  - (u0)W0 - (w0)U0 = -(w0u0), row@X0
-        #        rowID[inc:(inc+6)] = np.array([0,0,0,0,0,0]).reshape(6,1)
-        #    else:
-        #        #Non-exploding scaling: (1 + k5f)X0 - X1 - Y1 + Y0 = 0
-        #        rowID[inc:(inc+4)] = np.array([0,0,0,0]).reshape(4,1)
-        #    #Nernst for Y: (k1f/k1b)X0 - Y0 = 0 row@Y0
-        #    rowID[inc:(inc+2)] = np.array([N+1,N+1]).reshape(2,1)
-        #else:
-        #    #kinetic for X: (1/k1b + k1f/k1b + k5f/k1b)X0 - (1/k1b)X1 - Y0 ...
-        #    #... - (u0*k5b/kb1)W0 - (w0*k5b/kb1)*U0 = -(k5b/kb1)(u0w0), row@X0
-        #    rowID[inc:(inc+5)] = np.array([0,0,0,0,0]).reshape(5,1)
-        #    #kinetic for Y: (1/k1f + k1b/k1f)Y0 - (1/k1f)Y1 - X0 = 0, row@Y0
-        #    rowID[inc:(inc+3)] = np.array([N+1,N+1,N+1]).reshape(3,1)
-        #if k3f ==0:
-        #    #Kinetic for W: (1/k5f + u0*k5b/k5f)W0 - (1/k5f)W1 - X0 + (w0*k5b/k5f)U0 = (k5b/k5f)(u0w0), row@W0
-        #    rowID[inc:(inc+4)] = np.array([2*N+2,2*N+2,2*N+2,2*N+2]).reshape(4,1)
-        #    #Equal flux for U: W1 - W0 + U0 - U1 = 0  row@U0
-        #    rowID[inc:(inc+4)]= np.array([3*N+3,3*N+3,3*N+3,3*N+3]).reshape(4,1)
-        #elif FcEq[2] == 1:
-        #    #Kinetic for W: (1/k5f + 2*u0*k5b/k5f)W0 - (1/k5f)W1 - 2X0 + ...
-        #    #... +(1/k5f + 2*w0*k5b/k5f)U0 - (1/k5f)U1 = 2k5b/k5f(u0w0) row@W0
-        #    rowID[inc:(inc+5)] = np.array([2*N+2,2*N+2,2*N+2,2*N+2,2*N+2]).reshape(5,1)
-        #    #Nernst for U: (k3f/k3b)W0 - U0 = 0, row@U0
-        #    rowID[inc:(inc+2)] = np.array([3*N+3,3*N+3]).reshape(2,1)
-        #else:
-        #    #Kinetic for W: (1/k3b + u0*k5b/k3b + k3f/k3b)W0 - (1/k3b)W1 ...
-        #    #... - (k5f/k3b)X0 + (w0*k5b/k3b - 1)U0 = k5b/k3b(u0w0) row@W0
-        #    rowID[inc:(inc+4)] = np.array([2*N+2,2*N+2,2*N+2,2*N+2]).reshape(4,1)
-        #    #Overall flux balance for U: X1-X0+Y1-Y0-0.5U1+0.5U0-0.5W1+0.5W0=0 row@U0S
-        #    rowID[inc:(inc+8)] = np.array([3*N+3,3*N+3,3*N+3,3*N+3,3*N+3,3*N+3,3*N+3,3*N+3]).reshape(8,1)
-        print('Not currently supported')
-    #BC for Z. 
+        #W BCs. Nernst equation: k3fW0 -k3bU0 = 0
+        opt_Nernst_r3 = (k3f)*W[0] - k3b*U[0]
+        #Kinetic equation:  (1 + k3f)W0 - W1 - k3b*U0 = 0
+        opt_Kinetic_r3 = np.array([[(1.0 + k3f),-1.0,-k3b],3*[2*N+2],[2*N+2,2*N+3,3*N+3]])    
+        #Simplifies to no-flux if k3f = 0 - no need for a k3f == 0 option.
+        f[2*N+2] = {True:opt_Nernst_r3,False:opt_Kinetic_r3}.get(FcEq[2]==1)
+        #U BCs. Equal-flux to W equation: W1 - W0 + U1 - U0 = 0
+        f[3*N+3] = W[1] - W[0] + U[1] - U[0]
+    else: #Concerted reaction - more complicated equations. 
+        #X BCs: rxn1 Nernst w/concert: (1 + k5f)X0 - X1 - Y1 + Y0 - k5b*U0*W0 = 0
+        opt_Nernst_r1Xct = (1 + k5f)*X[0] - X[1] - Y[1] + Y[0] - k5b*U[0]*W[0]
+        #rxn 1 kinet w/ concert: (1 + k1f + k5f)X0 - X1 - k1bY0 - k5b*U0*W0 = 0
+        opt_Kinetic_r1Xct = (1 + k1f + k5f)*X[0] - X[1] - k1b*Y[0] - k5b*U[0]*W[0]
+        #Y BCs: Nernst constraint: (k1f/k1b)X0 - Y0 = 0
+        opt_Nernst_r1Yct = k1f*X[0] - k1b*Y[0]
+        #Full kinetic: (1 + k1b)Y0 - Y1 - k1fX0 = 0, goes to no-flux if k1f = 0. 
+        opt_Kinetic_r1Yct = (1 + k1b)*Y[0] - Y[1] - k1f*X[0]
+        XYBC = {True:[opt_Nernst_r1Xct,opt_Nernst_r1Yct],False:[opt_Kinetic_r1Xct,opt_Kinetic_r1Yct]}.get(FcEq[0]==1)
+        f[0] = XYBC[0]
+        f[N+1] = XYBC[1]
+        #W BCs: rxn3 Nernst w/concert: 2k5bU0W0 - 2k5fX0 - U1 - W1 + U0 + W0 = 0
+        opt_Nernst_r3Wct = 2*k5b*U[0]*W[0] - 2*k5f*X[0] - U[1] - W[1] + U[0] + W[0]
+        #W BCs: rxn3 Kinetic w/concert: k5bU0W0 - k5fX0 + (1 + k3f)W0 - W1 - k3bU0 = 0
+        opt_Kinetic_r3Wct = k5b*U[0]*W[0] - k5f*X[0]  + (1 + k3f)*W[0] - W[1] - k3b*U[0]
+        #U BCs: rxn3 Nernst w/ concert: k3f*W0 - k3b*U0 = 0, 2 pts @ row U0
+        opt_Nernst_r3Uct = k3f*W[0] - k3b*U[0]
+        #U BCs: rxn3 Kinetic w/concert: X1 - X0 + Y1 - Y0 - 0.5U1 + 0.5 U0 - 0.5 W1 + 0.5 W0 = 0, 8 pts @ row W0
+        tg = {True:0,False:1}.get(k3f==0) #Toggle that enables 'equal flux' if k3f = 0
+        opt_Kinetic_r3Uct = tg*X[1] - tg*X[0] + tg*Y[1] - tg*Y[0] - 0.5*U[1] + 0.5*U[0] - 0.5*W[1] + 0.5*W[0]
+        WUBC = {True:[opt_Nernst_r3Wct,opt_Nernst_r3Uct],False:[opt_Kinetic_r3Wct,opt_Kinetic_r3Uct]}.get(FcEq[2]==1)
+        f[2*N+2] = WUBC[0]
+        f[3*N+3] = WUBC[1]
+    #ZBC: No flux: Z1 - Z0 = 0, 2 points @ row Z0
     f[4*N+4] = Z[1] - Z[0]
     
     #Compute central entries...
@@ -139,14 +104,28 @@ def NonLinEval(C,C0,kVect,Dm,dt,FcEq,N,Dv,dx1,Cb):
     Dm2 = Dm[1:N,1].reshape(len(Dm[1:N,1]),1)
     Dm3 = 1 + Dm1 + Dm2
     
-    #X, Y, W, U, Z
+    #X, Y, W, U, Z. All equations are (i-1),(i+1) diffusion terms, (i) diffusion terms w/ SCF, and added rxn terms as described in makeMat
+    #X, ind = 1 to N-1
+        #Dm[3]X(i) - Dm[2]X(i+1) - Dm[1]X(i-1) = x(i)
+    #Y, ind =  N+2 to 2*N
+        #(Dm[3] + (k2f + k6f)*dt)Y(i) - Dm[2]Y(i+1) - Dm[1]Y(i-1) - k2b*dt*w(i)U(i) - ((k2b*u(i) + k6b)*dt)W(i)...
+        #... =  y(i) - k2b*dt*u(i)w(i)
+    #W, ind = 2*N+3 to 3*N+1
+        #(Dm[3] + (k2b*u(i) + k6b)*dt)W(i) - Dm[2]W(i+1) - Dm[1]W(i-1) - (k2f+k6f)*dt*Y(i)   ...
+        # ... + k2b*dt*w(i)U(i) = w(i)(1 + k2b*dt*u(i))
+    #U, ind = 3*N+4 to 4*N+2
+        #(Dm[3] + k2b*dt*w(i) + k4f*dt)U(i) - Dm[2]U(i+1) - Dm[1]U(i-1) - k2f*dt*Y(i) ...
+        # ... + k2b*dt*u(i)*W(i) - k4b*dt*Z(i) = u(i)(1 + k2b*dt*w(i))
+    #Z, ind = 4*N+5 to 5*N+3
+        #(Dm[3] + k4b*dt)Z(i) - Dm[2]Z(i+1) - Dm[1]Z(i-1) - k1f*dt*u(i) = z(i)
+    
+    
     f[1:N] = -Dm1*X[0:(N-1)] + Dm3*X[1:N] - Dm2*X[2:N+1] - X0[1:N]
-    f[N+2:2*N+1] = -Dm1*Y[0:(N-1)] + (Dm3 + k2f*dt)*Y[1:N] - Dm2*Y[2:N+1] - k2b*dt*W[1:N]*U[1:N] - Y0[1:N]
-    f[2*N+3:3*N+2]= -Dm1*W[0:(N-1)] + (Dm3 + k2b*dt*U[1:N])*W[1:N] - Dm2*W[2:N+1] -k2f*dt*Y[1:N] - W0[1:N]
+    f[N+2:2*N+1] = -Dm1*Y[0:(N-1)] + (Dm3 + (k2f+ k6f)*dt)*Y[1:N] - Dm2*Y[2:N+1] - k2b*dt*W[1:N]*U[1:N] -k6b*dt*W[1:N] - Y0[1:N]
+    f[2*N+3:3*N+2]= -Dm1*W[0:(N-1)] + (Dm3 + k6b*dt + k2b*dt*U[1:N])*W[1:N] - Dm2*W[2:N+1] -(k2f+k6f)*dt*Y[1:N] - W0[1:N]
     f[3*N+4:4*N+3] = -Dm1*U[0:(N-1)] + (Dm3 + k2b*dt*W[1:N] + k4f*dt)*U[1:N] - Dm2*U[2:N+1] -k2f*dt*Y[1:N] -k4b*dt*Z[1:N] - U0[1:N]
     f[4*N+5:5*N+4] = -Dm1*Z[0:(N-1)] + (Dm3 + k4b*dt)*Z[1:N] - Dm2*Z[2:N+1] - k4f*dt*U[1:N]   - Z0[1:N]
-    f = f.flatten()
-    return f
+    return f.flatten()
 
 
 def MatSolve(C0,kVect,Dm,dt,FcEq,N,Dv,dx1,Cb):
@@ -159,82 +138,44 @@ def MatSolve(C0,kVect,Dm,dt,FcEq,N,Dv,dx1,Cb):
     return sparL.spsolve(Mat,Ceql)
 
 def modC(C0,kVect,Dm,dt,FcEq,N,Dv,dx1,Cb):
-    Ceql = (1.0*C0).reshape(len(C0),1);
+    #Establish modified C variable - prevents 'backflow' contamination of C0
+    Ceql = (1.0*C0).reshape(len(C0),1)
     #All "last entries" = bulk concentrations.
     Ceql[[N,2*N+1,3*N+2,4*N+3,5*N+4]] = np.array([Cb[0],Cb[1],Cb[2],Cb[3],Cb[4]]).reshape(5,1)
     #Extract & nondimensionalize rate constants for boundary condition assignments
-    k1f = kVect[0]*dx1/Dv[0]
-    k1b = kVect[1]*dx1/Dv[0]
-    k2f = kVect[2]
     k2b = kVect[3]
-    k3f = kVect[4]*dx1/Dv[0]
-    k3b = kVect[5]*dx1/Dv[0]
-    k4f = kVect[6]
     k4b = kVect[7]
     k5f = kVect[8]*dx1/Dv[0]
     k5b = kVect[9]*dx1/Dv[0]
-    k6f = kVect[10]
-    k6b = kVect[11]
     #Extract previous timepoint data for U0 (u0) and W0 (w0)
-    w0 = C0[2*N+2]
-    u0 = C0[3*N+3]
+    w0 = C0[2*N+2][0]
+    u0 = C0[3*N+3][0]
     #Assessment of equilibrium happens here (coming soon)
     #Turn off equilibrated rxns if the rate constants are identically zero
-    if k1f == 0:
+    if kVect[0] == 0:
         FcEq[0] = 0
-    if k3f == 0:
+    if kVect[4] == 0:
         FcEq[2] = 0
     #Begin modification of surface BCs. 
-    if k5f == 0:
-        #No concerted reaction - all surface BCs are = 0. 
-        Ceql[[0,N+1,2*N+2,3*N+3,4*N+4]] = np.array([0,0,0,0,0]).reshape(5,1)
-    else:
-        #Concerted mechanism is present. Variable surface BCs. 
-        #X boundary condition has 3 options: 
-        if k1f == 0 or FcEq[0] == 1:
-            if abs(k5b) >0:
-                #k5b is present, kinetic or equilibrium control (k5b scaling)
-                Ceql[0] = -w0*u0
-            else:
-                #k5b is zero, no bimolecular back reaction. 
-                Ceql[0] = 0
-        else:
-            #Presence of reaction 1 necessitates k1b scaling.  
-            Ceql[0] = -(k5f)*(w0*u0)
-        #Y boundary condition always equal to zero
-        Ceql[N+1] = 0
-        #W boundary condition has three options
-        if k3f == 0:
-            #No interchange reaction, scaling for bimolecular back rxn only
-            Ceql[2*N+2] = (k5b)*(u0*w0)
-        elif FcEq[2] == 1:
-            #"Doubled" back reaction to account for eq. W & U flux. 
-            Ceql[2*N+2] = 2*(k5b)*(u0*w0)
-        else:
-            #Presence of kinetic IC reaction introduces k3b scaling
-            Ceql[2*N+2] = k5b*(u0*w0)
-        #U boundary condition always equal to zero
-        Ceql[3*N+3] = 0
-        #Z boundary condition always equal to zero
-        Ceql[4*N+4] = 0   
-    #Start modifying central points. 
-    #Grab u, w data
+    #Y, U, Z BCs always have eq = 0
+    Ceql[[N+1,3*N+3,4*N+4]] = np.array([0,0,0]).reshape(3,1)
+    if k5f == 0: #No concerted reaction, X, W BCs == 0
+        Ceql[[0,2*N+2]] = np.array([0,0]).reshape(2,1)
+    else: #Concerted reaction, XBC = -k5b*u0*w0, WBC = 2*k5b*u0*w0 if eq., k5b*u0*w0 if kinetic.
+        scl = {True:2.0,False:1.0}.get(FcEq[2]==1) #Toggle for correcting WBC
+        Ceql[[0,2*N+2]] = np.array([-k5b*u0*w0,k5b*w0*u0*scl]).reshape(2,1)
+    #Start modifying central points. Access u, w data. 
     upv = C0[2*N+3:3*N+2].reshape((N-1),1)
     wpv = C0[3*N+4:4*N+3].reshape((N-1),1)
-    #Indexes for start/end of center points
+    #Indexes for start/end of center points (easy reference)
     specLow = np.array([1,N+2,2*N+3,3*N+4,4*N+5])
     specHigh = np.array([N-1,2*N,3*N+1,4*N+2,5*N+3])
     #Modification #1: Add -k2b*w(i)*u(i)*dt to central Y points. 
-    modifY = -1*k2b*dt*np.multiply(upv,wpv)
-    Ceql[specLow[1]:(specHigh[1]+1)] = Ceql[specLow[1]:(specHigh[1]+1)] + modifY
+    Ceql[specLow[1]:(specHigh[1]+1)] += -k2b*dt*np.multiply(upv,wpv)
     #Modification #2: Multiply W central points by (1 + k2b*dt*u(i))
-    liner = np.arange(1,N)/np.arange(1,N)
-    liner = liner.reshape(N-1,1)
-    modifW = (liner + k4b*dt*upv)
-    Ceql[specLow[2]:(specHigh[2]+1)] = np.multiply(Ceql[specLow[2]:(specHigh[2]+1)],modifW)
+    Ceql[specLow[2]:(specHigh[2]+1)] = np.multiply(Ceql[specLow[2]:(specHigh[2]+1)],(np.ones([N-1,1])+k4b*dt*upv))
     #Modification #3: Multiply U central points by (1 + k2b*dt*w(i))
-    modifU = (liner + k4b*dt*wpv)
-    Ceql[specLow[3]:(specHigh[3]+1)] = np.multiply(Ceql[specLow[2]:(specHigh[2]+1)],modifU)
+    Ceql[specLow[3]:(specHigh[3]+1)] = np.multiply(Ceql[specLow[2]:(specHigh[2]+1)],(np.ones([N-1,1])+k2b*dt*wpv))
     return Ceql
 
 def makeMat(C0,kVect,Dm,dt,FcEq,N,Dv,dx1,Cb):
@@ -261,42 +202,31 @@ def makeMat(C0,kVect,Dm,dt,FcEq,N,Dv,dx1,Cb):
     if k3f == 0:
         FcEq[2] = 0
     
-    #Compute total # of entries. Accounting below. Start incrementer as well (inc)
-    #5 for fixed-conc BCs, 25 for maximum # of variable BCs (see equations)
-    #(N-1) center points so 3 * # of species times that for diffusion terms. 
+    #Total # of entries...5 for fixed-conc BCs, 25 for maximum # of variable BCs
+    #(N-1) center points, so 3 * # of species times that for diffusion terms. 
     #Add additional rxn requirements (2 for Y, 2 for W, 3 for U, 1 for Z).
     entTot = 5 + 25 + (3*5 + 2 + 2 + 3 + 1)*(N-1)
-    inc = 0
     
     ##################### ASSIGNING BC TO MATRIX ###########################
-    #Generate storage space for entry value, row, column index
-    entVal = 0.0*np.arange(0,entTot).reshape(entTot,1)
-    rowID = 0.0*np.arange(0,entTot).reshape(entTot,1)
-    colID = 0.0*np.arange(0,entTot).reshape(entTot,1)
-    #entVal is the multiplication factor for the matrix entry (-1, D, 1/x, etc.)
-    #"Row ID" refers to the position of the equation. All eqns share a row ID.
-    #"Col ID" refers to the position of the concentration in the C vector. 
+    #Generate storage space for entry value, row, column index. 3 x entTot size array. 
+    #R[0]:Entry in mat,R[1]:row index in mat(shared by eqns), R[2]: col index in mat(referenced conc.)
+    entryInc = (0.0*np.arange(0,3*entTot).reshape(3,entTot),0)
     #Col IDs for X0, Y0, W0, U0, Z0 = 0, N+1, 2*N+2, 3*N+3, 4*N+4
     #Col IDs for XN, YN, WN, UN, ZN = N, 2*N+1, 3*N+2, 4*N+3, 5*N+4
     #Bimolecular reactions may depend on the previous timepoint's concentration data
     #This is denoted as lowercase (e.g., u0 is U0 in the input conc (C0)). 
     
-    #Assign toggled BCs
-    #Eqns 0 through 4: Bulk concentration BCs
-    #AN = Ab, where A = {X,Y,W,U,Z}, Ab = bulk, row@AN
-    #Note carefully that vector[index1:index2] retrieves entries index1 to (index2-1).
-    entVal[inc:(inc+5)] = np.array([1,1,1,1,1]).reshape(5,1)
-    rowID[inc:(inc+5)] = np.array([N,2*N+1,3*N+2,4*N+3,5*N+4]).reshape(5,1)
-    colID[inc:(inc+5)] = np.array([N,2*N+1,3*N+2,4*N+3,5*N+4]).reshape(5,1)
-    inc += 5
+    #Bulk conc BCs: AN = Ab, where A = {X,Y,W,U,Z}, Ab = bulk, row@AN
+    #Syntax of input to entry Updater is a 3 x pts array of [0]:entries, [1]:rowIDs, [2]: colIDs
+    entryInc = entryUpdater(np.array([[1,1,1,1,1],[N,2*N+1,3*N+2,4*N+3,5*N+4],[N,2*N+1,3*N+2,4*N+3,5*N+4]]),entryInc)
+    
     #Following through same logic path as above, now implementing variable equations. 
     if k5f ==0: #NO concerted reaction (simpler equations)
         #X BCs. Nernst equation: (k1f/k1b)X0 - Y0 = 0, 2 pts @ row X0
-        opt_Nernst_r1 = np.array([[k1f/k1b,-1.0],2*[0],[0,N+1]]) #Contains entries/rowIDs/colIDs for Nernst BC.
-        #Kinetic equation: 
+        opt_Nernst_r1 = np.array([[k1f,-k1b],2*[0],[0,N+1]]) #Contains entries/rowIDs/colIDs for Nernst BC.
+        #Kinetic equation: (1+k1f)X0 - X1 - k1bY = 0, 3 pts # row X0
         opt_Kinetic_r1 = np.array([[(1.0+k1f),-1.0,-k1b],3*[0],[0,1,N+1]]) #Contains "" for kinetic BC. length = # of points. 
         XBC = {True:opt_Nernst_r1,False:opt_Kinetic_r1}.get(FcEq[0]==1)
-        #XBC = choose.get(FcEq[0]==1,'default')
         #Y BCs. Opposite-flux: X1 - X0 + Y1 - Y0 = 0, 4 pts @ row Y0
         YBC = np.array([[1.0,-1.0,1.0,-1.0],4*[N+1],[1,0,N+2,N+1]])
         #W BCs. Nernst equation: (k3f/k3b)W0 - U0 = 0, 2 pts @ row @W0
@@ -308,12 +238,12 @@ def makeMat(C0,kVect,Dm,dt,FcEq,N,Dv,dx1,Cb):
         #U BCs. Equal-flux to W equation: W1 - W0 + U1 - U0 = 0, 4 pts @ U0
         UBC = np.array([[1.0,-1.0,1.0,-1.0],4*[3*N+3],[2*N+3,2*N+2,3*N+4,3*N+3]])
     else: #Concerted reaction - more complicated equations. 
-        #X BCs: rxn1 Nernst w/concert: (1 + k5f)X0 - X1 - Y1 + Y0 - k5b*(u0)W0 - k5b(w0)U0 = -(w0u0), 6 pts @ row X0
+        #X BCs: rxn1 Nernst w/concert: (1 + k5f)X0 - X1 - Y1 + Y0 - k5b*(u0)W0 - k5b(w0)U0 = -k5b(w0u0), 6 pts @ row X0
         opt_Nernst_r1Xct = np.array([[(1.0 + k5f),-1.0,-1.0,1.0,-k5b*u0,-k5b*w0],6*[0],[0,1,N+2,N+1,2*N+2,3*N+3]])
-        #rxn 1 kinet w/ concert: (1 + k1f + k5f)X0 - X1 - k1bY0 -(u0*k5b)W0 - (w0*k5b)U0 = -k5b(u0w), 5 pts @ row X0
+        #rxn 1 kinet w/ concert: (1 + k1f + k5f)X0 - X1 - k1bY0 -(u0*k5b)W0 - (w0*k5b)U0 = -k5b(u0w0), 5 pts @ row X0
         opt_Kinetic_r1Xct = np.array([[(1.0 + k1f + k5f),-1.0,-k1b,-k5b*u0,-k5b*w0],5*[0],[0,1,N+1,2*N+2,3*N+3]])
         #Y BCs: Nernst constraint: (k1f/k1b)X0 - Y0 = 0, 2 pts @ row Y0
-        opt_Nernst_r1Yct = np.array([[(k1f/k1b),-1.0],2*[N+1],[0,N+1]])
+        opt_Nernst_r1Yct = np.array([[(k1f),-k1b],2*[N+1],[0,N+1]])
         #Full kinetic: (1 + k1b)Y0 - Y1 - k1fX0 = 0, 3 pts @ row Y0, goes to no-flux if k1f = 0. 
         opt_Kinetic_r1Yct = np.array([[(1.0 + k1b),-1.0,-k1f],3*[N+1],[N+1,N+2,0]])
         XYBC = {True:[opt_Nernst_r1Xct,opt_Nernst_r1Yct],False:[opt_Kinetic_r1Xct,opt_Kinetic_r1Yct]}.get(FcEq[0]==1)
@@ -336,30 +266,27 @@ def makeMat(C0,kVect,Dm,dt,FcEq,N,Dv,dx1,Cb):
     #Combine all results...
     results = [XBC,YBC,WBC,UBC,ZBC]
     for result in results:
-        pts = np.shape(result)[1]
-        entVal[inc:(inc+pts)] = result[0,::].reshape(pts,1)
-        rowID[inc:(inc+pts)] = result[1,::].reshape(pts,1)
-        colID[inc:(inc+pts)] = result[2,::].reshape(pts,1)
-        inc += pts
-    #For viewing boundary condition placement. Uncomment for production or it will break solver.    
-    #MPL.spy(spar.coo_matrix((entVal.flatten(),(rowID.flatten(),colID.flatten())),shape=((5*N+5),(5*N+5))).tocsr(),markersize=3)
+        entryInc = entryUpdater(result,entryInc)
+    
+    #For viewing boundary condition placement. Comment for production.
+    #MPL.spy(spar.coo_matrix((entryInc[0][0,::],(entryInc[0][1,::],entryInc[0][2,::])),shape=((5*N+5),(5*N+5))).tocsr(),markersize=3)
     #MPL.show()
     
     #Allocate central points (after surface BC, before bulk BC). Eqns follow.
-    #(The bracketing on the D's refers to math notation not coding... subtract one for code)
-        #X, ind = 1 to N-1
-            #Dm[3]X(i) - Dm[2]X(i+1) - Dm[1]X(i-1) = x(i)
-        #Y, ind =  N+2 to 2*N
-            #(Dm[3] + (k2f + k6f)*dt)Y(i) - Dm[2]Y(i+1) - Dm[1]Y(i-1) - k2b*dt*w(i)U(i) - ((k2b*u(i) + k6b)*dt)W(i) ...
-            #... = = y(i) - k2b*dt*u(i)w(i)
-        #W, ind = 2*N+3 to 3*N+1
-            #(Dm[3] + (k2b*u(i) + k6b)*dt)W(i) - Dm[2]W(i+1) - Dm[1]W(i-1) - (k2f+k6f)*dt*Y(i)   ...
-            # ... + k2b*dt*w(i)U(i) = w(i)(1 + k2b*dt*u(i))
-        #U, ind = 3*N+4 to 4*N+2
-            #(Dm[3] + k2b*dt*w(i) + k4f*dt)U(i) - Dm[2]U(i+1) - Dm[1]U(i-1) - k2f*dt*Y(i) ...
-            # ... + k2b*dt*u(i)*W(i) - k4b*dt*Z(i) = u(i)(1 + k2b*dt*w(i))
-        #Z, ind = 4*N+5 to 5*N+3
-            #(Dm[3] + k4b*dt)Z(i) - Dm[2]Z(i+1) - Dm[1]Z(i-1) - k1f*dt*u(i) = z(i)
+    #(The bracketing on the D's refers to math notation not coding... subtract one for code!)
+    #X, ind = 1 to N-1
+        #Dm[3]X(i) - Dm[2]X(i+1) - Dm[1]X(i-1) = x(i)
+    #Y, ind =  N+2 to 2*N
+        #(Dm[3] + (k2f + k6f)*dt)Y(i) - Dm[2]Y(i+1) - Dm[1]Y(i-1) - k2b*dt*w(i)U(i) - ((k2b*u(i) + k6b)*dt)W(i)...
+        #... = = y(i) - k2b*dt*u(i)w(i)
+    #W, ind = 2*N+3 to 3*N+1
+        #(Dm[3] + (k2b*u(i) + k6b)*dt)W(i) - Dm[2]W(i+1) - Dm[1]W(i-1) - (k2f+k6f)*dt*Y(i)   ...
+        # ... + k2b*dt*w(i)U(i) = w(i)(1 + k2b*dt*u(i))
+    #U, ind = 3*N+4 to 4*N+2
+        #(Dm[3] + k2b*dt*w(i) + k4f*dt)U(i) - Dm[2]U(i+1) - Dm[1]U(i-1) - k2f*dt*Y(i) ...
+        # ... + k2b*dt*u(i)*W(i) - k4b*dt*Z(i) = u(i)(1 + k2b*dt*w(i))
+    #Z, ind = 4*N+5 to 5*N+3
+        #(Dm[3] + k4b*dt)Z(i) - Dm[2]Z(i+1) - Dm[1]Z(i-1) - k1f*dt*u(i) = z(i)
     
     #Begin assignment according to the above equations (hardcoded switches and indexes)
     #Indexer for what species is currently being treated
@@ -368,81 +295,58 @@ def makeMat(C0,kVect,Dm,dt,FcEq,N,Dv,dx1,Cb):
     specLow = np.array([1,N+2,2*N+3,3*N+4,4*N+5])
     specHigh = np.array([N-1,2*N,3*N+1,4*N+2,5*N+3])
     #Get the previous timepoint data for U, W (useful in many rxns)
-    upv = C0[2*N+3:3*N+2].reshape((N-1),1)
-    wpv = C0[3*N+4:4*N+3].reshape((N-1),1)
+    upv = C0[2*N+3:3*N+2].flatten()
+    wpv = C0[3*N+4:4*N+3].flatten()
     for ss in specCounter:
         #Create vector of "i" values
-        rowVector = np.arange(specLow[ss],specHigh[ss]+1).reshape((specHigh[ss]+1-specLow[ss]),1)
+        rowVector = np.arange(specLow[ss],specHigh[ss]+1)
         #Add (i+1) diffusion term
-        entVal[inc:(inc+(N-1))] = -Dm[1:N,1].reshape(N-1,1)
-        rowID[inc:(inc+(N-1))] = rowVector
-        colID[inc:(inc+(N-1))] = rowVector + 1
-        inc += (N-1)
+        entryInc = entryUpdater(np.array([-Dm[1:N,1],rowVector,(rowVector+1)]),entryInc)
+        #inc += (N-1)
         #Add (i-1) diffusion term
-        entVal[inc:(inc+(N-1))] = -Dm[1:N,0].reshape(N-1,1)
-        rowID[inc:(inc+(N-1))] = rowVector 
-        colID[inc:(inc+(N-1))] = rowVector - 1
-        inc += (N-1)
+        entryInc = entryUpdater(np.array([-Dm[1:N,0],rowVector,(rowVector-1)]),entryInc)
         #Assign SCF (self-cat. factor) for species: SCF for X, Y, W, U, Z.
         SCF = {0:0 ,1:(k2f + k6f)*dt, 2:(k2b*upv + k6b)*dt, 3:(k2b*wpv + k4f)*dt, 4:k4b*dt}.get(ss)
         #Add (i) self-diffusion term with SCF to account for reactions:
-        entVal[inc:(inc+(N-1))] = (1 + Dm[1:N,0].reshape(N-1,1) + Dm[1:N,1].reshape(N-1,1) + SCF)
-        rowID[inc:(inc+(N-1))] = rowVector
-        colID[inc:(inc+(N-1))] = rowVector
-        inc += (N-1)
+        entryInc = entryUpdater(np.array([(1 + Dm[1:N,0] + Dm[1:N,1] + SCF),rowVector,rowVector]),entryInc)
         #Add additional terms as required by the species (also v. hardcoded)
         if ss == 1: #Species Y, 2 terms
             #Term #1: -k2b*w(i)*dt on U(i) cols.
-            entVal[inc:(inc+(N-1))] = -k2b*dt*wpv
-            rowID[inc:(inc+(N-1))] = rowVector
-            colID[inc:(inc+(N-1))] = np.arange(specLow[3],(specHigh[3]+1)).reshape(N-1,1)
-            inc += (N-1)
+            entryInc = entryUpdater(np.array([-k2b*dt*wpv,rowVector,np.arange(specLow[3],(specHigh[3]+1))]),entryInc)
             #Term #2: -(k2b*u(i) + k6b)*dt on W(i) cols
-            entVal[inc:(inc+(N-1))] = -(k2b*upv + k6b)*dt 
-            rowID[inc:(inc+(N-1))] = rowVector
-            colID[inc:(inc+(N-1))] = np.arange(specLow[2],(specHigh[2]+1)).reshape(N-1,1)
-            inc = inc + (N-1)
+            entryInc = entryUpdater(np.array([-(k2b*upv + k6b)*dt,rowVector,np.arange(specLow[2],(specHigh[2]+1))]),entryInc)
         elif ss == 2: #Species W, 2 terms
             #Term #1: -(k2f+k6f)*dt, on Y(i) cols
-            entVal[inc:(inc+(N-1))] = -(k2f+k6f)*dt*np.ones([N-1,1])
-            rowID[inc:(inc+(N-1))] = rowVector
-            colID[inc:(inc+(N-1))] = np.arange(specLow[1],(specHigh[1]+1)).reshape(N-1,1)
-            inc += (N-1)
+            entryInc = entryUpdater(np.array([-(k2f+k6f)*dt*np.ones([N-1]),rowVector,np.arange(specLow[1],(specHigh[1]+1))]),entryInc)
             #Term #2: k2b*dt*w(i), on U(i) cols. 
-            entVal[inc:(inc+(N-1))] = k2b*dt*wpv
-            rowID[inc:(inc+(N-1))] = rowVector
-            colID[inc:(inc+(N-1))] = np.arange(specLow[3],(specHigh[3]+1)).reshape(N-1,1)
-            inc += (N-1)
+            entryInc = entryUpdater(np.array([k2b*dt*wpv,rowVector,np.arange(specLow[3],(specHigh[3]+1))]),entryInc)
         elif ss == 3: #Species U, 3 terms
             #Term #1: -k2f*dt, on Y(i) cols. 
-            entVal[inc:(inc+(N-1))] =  -k2f*dt*np.ones([N-1,1])
-            rowID[inc:(inc+(N-1))] = rowVector
-            colID[inc:(inc+(N-1))] = np.arange(specLow[1],(specHigh[1]+1)).reshape(N-1,1)
-            inc += (N-1)
+            entryInc = entryUpdater(np.array([-k2f*dt*np.ones([N-1]),rowVector,np.arange(specLow[1],(specHigh[1]+1))]),entryInc)
             #Term #2: k2b*dt*u(i) on W(i) cols.
-            entVal[inc:(inc+(N-1))] = k2b*dt*upv 
-            rowID[inc:(inc+(N-1))] = rowVector
-            colID[inc:(inc+(N-1))] = np.arange(specLow[2],(specHigh[2]+1)).reshape(N-1,1)
-            inc += (N-1)
+            entryInc = entryUpdater(np.array([k2b*dt*upv,rowVector,np.arange(specLow[2],(specHigh[2]+1))]),entryInc)
             #Term #3: -k4b*dt, on Z(i) cols
-            entVal[inc:(inc+(N-1))] = -k4b*dt*np.ones([N-1,1])
-            rowID[inc:(inc+(N-1))] = rowVector
-            colID[inc:(inc+(N-1))] = np.arange(specLow[4],(specHigh[4]+1)).reshape(N-1,1)
-            inc += (N-1)
+            entryInc = entryUpdater(np.array([-k4b*dt*np.ones([N-1]),rowVector,np.arange(specLow[4],(specHigh[4]+1))]),entryInc)
         elif ss == 4: #Species Z, 1 term
             #Term addition: -k4f*dt, on U(i) cols
-            entVal[inc:(inc+(N-1))] = -k4f*dt*np.ones([N-1,1])
-            rowID[inc:(inc+(N-1))] = rowVector
-            colID[inc:(inc+(N-1))] = np.arange(specLow[3],(specHigh[3]+1)).reshape(N-1,1)
-            inc += (N-1)                    
+            entryInc = entryUpdater(np.array([-k4f*dt*np.ones([N-1]),rowVector,np.arange(specLow[3],(specHigh[3]+1))]),entryInc)                  
 
-    #Viewing central points allocation. Uncomment for production or it will cause plot-based crash.
-    #MPL.spy(spar.coo_matrix((entVal.flatten(),(rowID.flatten(),colID.flatten())),shape=((5*N+5),(5*N+5))).tocsr(),markersize=3)
+    #Viewing central points allocation. Comment for production.
+    #MPL.spy(spar.coo_matrix((entryInc[0][0,::],(entryInc[0][1,::],entryInc[0][2,::])),shape=((5*N+5),(5*N+5))).tocsr(),markersize=3)
     #MPL.show()
     #Generate and return matrix
-    return spar.coo_matrix((entVal.flatten(),(rowID.flatten(),colID.flatten())),shape=((5*N+5),(5*N+5))).tocsr()
+    return spar.coo_matrix((entryInc[0][0,::],(entryInc[0][1,::],entryInc[0][2,::])),shape=((5*N+5),(5*N+5))).tocsr()
 
-def modifier(bolgy):
-    bolgy += 3
-    hopo = np.array([0,0,0])
-    return bolgy, hopo
+def entryUpdater(values,entryInc):
+    # values = 3 by points array containing [0] entries, [1] row indexes, [2] col indexes
+    # entryInc = tuple containing (entryValues, inc)
+    # entryValues = 3 by entTot array containing [0] entry values, [1] row indexes, [2] col indexes
+    # inc = point incrementer. updated after each assignment to track 'location' in array.
+    #Get # of points being added....
+    pts = np.shape(values[0,::])[0]
+    #Assign values to the 'entries' array
+    entryInc[0][0,entryInc[1]:(entryInc[1]+pts)] = values[0,::]
+    entryInc[0][1,entryInc[1]:(entryInc[1]+pts)] = values[1,::]
+    entryInc[0][2,entryInc[1]:(entryInc[1]+pts)] = values[2,::]
+    #Return the updated entry array and increase the incrementer variable (tuple workaround)
+    return (entryInc[0],entryInc[1]+pts)
