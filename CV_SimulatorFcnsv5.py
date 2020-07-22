@@ -54,7 +54,6 @@ def NonLinEval(C,C0,kVect,Dm,dt,FcEq,N,Dv,dx1,Cb):
     f[4*N+3] = U[-1] - Cb[3]
     f[5*N+4] = Z[-1] - Cb[4]
     
-    
     #Compute BC entries...
     if k5f ==0: #NO concerted reaction (simpler equations)
         #X BCs. Nernst equation: k1fX0 - k1bY0 = 0
@@ -92,7 +91,7 @@ def NonLinEval(C,C0,kVect,Dm,dt,FcEq,N,Dv,dx1,Cb):
         opt_Nernst_r3Uct = k3f*W[0] - k3b*U[0]
         #U BCs: rxn3 Kinetic w/concert: X1 - X0 + Y1 - Y0 - 0.5U1 + 0.5 U0 - 0.5 W1 + 0.5 W0 = 0, 8 pts @ row W0
         tg = {True:0,False:1}.get(k3f==0) #Toggle that enables 'equal flux' if k3f = 0
-        opt_Kinetic_r3Uct = tg*X[1] - tg*X[0] + tg*Y[1] - tg*Y[0] - 0.5*U[1] + 0.5*U[0] - 0.5*W[1] + 0.5*W[0]
+        opt_Kinetic_r3Uct = -tg*X[1] + tg*X[0] - tg*Y[1] + tg*Y[0] - 0.5*U[1] + 0.5*U[0] - 0.5*W[1] + 0.5*W[0]
         WUBC = {True:[opt_Nernst_r3Wct,opt_Nernst_r3Uct],False:[opt_Kinetic_r3Wct,opt_Kinetic_r3Uct]}.get(FcEq[2]==1)
         f[2*N+2] = WUBC[0]
         f[3*N+3] = WUBC[1]
@@ -129,7 +128,6 @@ def modC(C0,kVect,Dm,dt,FcEq,N,Dv,dx1,Cb):
     Ceql[[N,2*N+1,3*N+2,4*N+3,5*N+4]] = np.array([Cb[0],Cb[1],Cb[2],Cb[3],Cb[4]]).reshape(5,1)
     #Extract & nondimensionalize rate constants for boundary condition assignments
     k2b = kVect[3]
-    k4b = kVect[7]
     k5f = kVect[8]*dx1/Dv[0]
     k5b = kVect[9]*dx1/Dv[0]
     #Extract previous timepoint data for U0 (u0) and W0 (w0)
@@ -158,7 +156,7 @@ def modC(C0,kVect,Dm,dt,FcEq,N,Dv,dx1,Cb):
     #Modification #1: Add -k2b*w(i)*u(i)*dt to central Y points. 
     Ceql[specLow[1]:(specHigh[1]+1)] += -k2b*dt*np.multiply(upv,wpv)
     #Modification #2: Multiply W central points by (1 + k2b*dt*u(i))
-    Ceql[specLow[2]:(specHigh[2]+1)] = np.multiply(Ceql[specLow[2]:(specHigh[2]+1)],(np.ones([N-1,1])+k4b*dt*upv))
+    Ceql[specLow[2]:(specHigh[2]+1)] = np.multiply(Ceql[specLow[2]:(specHigh[2]+1)],(np.ones([N-1,1])+k2b*dt*upv))
     #Modification #3: Multiply U central points by (1 + k2b*dt*w(i))
     Ceql[specLow[3]:(specHigh[3]+1)] = np.multiply(Ceql[specLow[3]:(specHigh[3]+1)],(np.ones([N-1,1])+k2b*dt*wpv))
     return Ceql
@@ -220,8 +218,8 @@ def makeMat(C0,kVect,Dm,dt,FcEq,N,Dv,dx1,Cb):
         opt_Kinetic_r3 = np.array([[(1.0 + k3f),-1.0,-k3b],3*[2*N+2],[2*N+2,2*N+3,3*N+3]])    
         #Simplifies to no-flux if k3f = 0 - no need for a k3f == 0 option.
         WBC = {True:opt_Nernst_r3,False:opt_Kinetic_r3}.get(FcEq[2]==1)
-        #U BCs. Equal-flux to W equation: W1 - W0 + U1 - U0 = 0, 4 pts @ U0
-        UBC = np.array([[1.0,-1.0,1.0,-1.0],4*[3*N+3],[2*N+3,2*N+2,3*N+4,3*N+3]])
+        #U BCs. Equal-flux to W equation: W1 - W0 - U1 + U0 = 0, 4 pts @ U0
+        UBC = np.array([[1.0,-1.0,-1.0,1.0],4*[3*N+3],[2*N+3,2*N+2,3*N+4,3*N+3]])
     else: #Concerted reaction - more complicated equations. 
         #X BCs: rxn1 Nernst w/concert: (1 + k5f)X0 - X1 - Y1 + Y0 - k5b*(u0)W0 - k5b(w0)U0 = -k5b(w0u0), 6 pts @ row X0
         opt_Nernst_r1Xct = np.array([[(1.0 + k5f),-1.0,-1.0,1.0,-k5b*u0,-k5b*w0],6*[0],[0,1,N+2,N+1,2*N+2,3*N+3]])
@@ -232,15 +230,17 @@ def makeMat(C0,kVect,Dm,dt,FcEq,N,Dv,dx1,Cb):
         #Full kinetic: (1 + k1b)Y0 - Y1 - k1fX0 = 0, 3 pts @ row Y0, goes to no-flux if k1f = 0. 
         opt_Kinetic_r1Yct = np.array([[(1.0 + k1b),-1.0,-k1f],3*[N+1],[N+1,N+2,0]])
         XYBC = {True:[opt_Nernst_r1Xct,opt_Nernst_r1Yct],False:[opt_Kinetic_r1Xct,opt_Kinetic_r1Yct]}.get(FcEq[0]==1)
+        XBC = XYBC[0]
+        YBC = XYBC[1]
         #W BCs: rxn3 Nernst w/concert: (1 + 2u0*k5b)W0 - W1 -2*k5f*X0 + (1 + 2*w0*k5b)*U0 - U1 = 2k5b*u0*w0, 5 pts @ row W0
         opt_Nernst_r3Wct = np.array([[(1.0 + 2*u0*k5b),-1.0,-2*k5f,(1.0 + 2*w0*k5b),-1.0],5*[2*N+2],[2*N+2,2*N+3,0,3*N+3,3*N+4]])
         #W BCs: rxn3 Kinetic w/concert: (1 + u0*k5b + k3f)W0 - W1 - k5f*X0 + (w0*k5b - k3b)U0 = k5b(u0w0), 4 pts @ row W0
         opt_Kinetic_r3Wct = np.array([[(1 + u0*k5b + k3f),-1.0,-k5f,(w0*k5b - k3b)],4*[2*N+2],[2*N+2,2*N+3,0,3*N+3]])
-        #U BCs: rxn3 Nernst w/ concert: k3f/k3b * W0 - U0 = 0, 2 pts @ row U0
+        #U BCs: rxn3 Nernst w/ concert: k3f*W0 - k3b*U0 = 0, 2 pts @ row U0
         opt_Nernst_r3Uct = np.array([[k3f,-k3b],2*[3*N+3],[2*N+2,3*N+3]])
-        #U BCs: rxn3 Kinetic w/concert: X1 - X0 + Y1 - Y0 - 0.5U1 + 0.5 U0 - 0.5 W1 + 0.5 W0 = 0, 8 pts @ row W0
-        tg = {True:0,False:1}.get(k3f==0) #Toggle that enables 'equal flux' if k3f = 0
-        opt_Kinetic_r3Uct = np.array([[tg,-tg,tg,-tg,-0.5,0.5,-0.5,0.5],8*[3*N+3],[1,0,N+2,N+1,3*N+4,3*N+3,2*N+3,2*N+2]])
+        #U BCs: rxn3 Kinetic w/concert: -X1 + X0 - Y1 + Y0 - 0.5U1 + 0.5 U0 - 0.5 W1 + 0.5 W0 = 0, 8 pts @ row W0
+        tg = {True:[0,-1],False:[1,1]}.get(k3f==0) #Toggle that enables 'equal flux' if k3f = 0
+        opt_Kinetic_r3Uct = np.array([[-tg[0],tg[0],-tg[0],tg[0],-0.5,0.5,-0.5*tg[1],0.5*tg[1]],8*[3*N+3],[1,0,N+2,N+1,3*N+4,3*N+3,2*N+3,2*N+2]])
         WUBC = {True:[opt_Nernst_r3Wct,opt_Nernst_r3Uct],False:[opt_Kinetic_r3Wct,opt_Kinetic_r3Uct]}.get(FcEq[2]==1)
         WBC = WUBC[0]
         UBC = WUBC[1]
@@ -299,7 +299,7 @@ def makeMat(C0,kVect,Dm,dt,FcEq,N,Dv,dx1,Cb):
             #Term #2: -(k2b*u(i) + k6b)*dt on W(i) cols
             entryInc = entryUpdater(np.array([-(k2b*upv + k6b)*dt,rowVector,np.arange(specLow[2],(specHigh[2]+1))]),entryInc)
         elif ss == 2: #Species W, 2 terms
-            #Term #1: -(k2f+k6f)*dt, on Y(i) cols - problem term
+            #Term #1: -(k2f+k6f)*dt, on Y(i) cols
             entryInc = entryUpdater(np.array([-(k2f+k6f)*dt*np.ones([N-1]),rowVector,np.arange(specLow[1],(specHigh[1]+1))]),entryInc)
             #Term #2: k2b*dt*w(i), on U(i) cols. 
             entryInc = entryUpdater(np.array([k2b*dt*wpv,rowVector,np.arange(specLow[3],(specHigh[3]+1))]),entryInc)

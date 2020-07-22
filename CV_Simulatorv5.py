@@ -50,12 +50,12 @@ def simCV(value):
     #CV is run as Ei -> Emax -> Emin -> Ei for # cycles at rate of nu.
     Ei = 1.5 #V - Initial voltage
     Emax = 5.0 #V - Max voltage 
-    Emin = 1.0 #V - Min voltage 
+    Emin = -1.0 #V - Min voltage 
     nu = 10 ** (value) #V/s- Sweep rate
-    cycles = 1 #Number of CV cycles (1+)
-    LSweep = 1 #Toggle. If (1), Experiment is Ei -> Emax, if (0) use full CV cycle.
+    cycles = 2 #Number of CV cycles (1+)
+    LSweep = 0 #Toggle. If (1), Experiment is Ei -> Emax, if (0) use full CV cycle.
     #Set bulk/initial concentrations of species. Only X is present for E, E', EC, only Y for CE. 
-    Cb = np.array([0.01,0.0,0.0,0.0,0.0]) #M - concs. for species X, Y, W, U, Z
+    Cb = np.array([0.01,0.00,0.00,0.00,0.00]) #M - concs. for species X, Y, W, U, Z
     
     ######################## COMPUTATIONAL TOGGLES ##########################
     #Toggles - changes mode of solver/computation or the information displayed
@@ -66,13 +66,13 @@ def simCV(value):
     stepPlot = 1 #(1) Plot stored (final) resolution deviations at end of computation, (0) do not.
     freeGrid = 0 #(1) Use dynamically-generated voltage grid, (0) do not. 
     adaptStep = 1 #(1) Use adaptive timestepping with dynamic grid, (0) do not. 
-    nonLin = 0 #(1) Always use nonlinear solver, (0) do not. 
+    nonLin = 0   #(1) Always use nonlinear solver, (0) do not. 
     nonLinCorr = 0 #(1) Use nonlinear solver in case of high resErr / solver failure, (0) do not. 
     #No support for nonlinear solver in dynamic grid - yet. 
     #No support for second derivative in dynamic grid - yet. 
     
     #Constraints - inputs for solver tolerances, etc. 
-    plotDensity = 10 #Approximate # of plots per cycle. May increase w/ adaptive stepping. 
+    plotDensity = 100 #Approximate # of plots per cycle. May increase w/ adaptive stepping. 
     secDerivBurn = 100 # Number of initial points to ignore for second derivative analysis (helps avoid false zeroes). Set to 1 for no burn.
     dx_max = 10 ** (-10) #m - maximum allowable 'dx' spacing (Empirical, may change)
     Nmin = 40 #Minimum allowable # of points in space grid
@@ -194,9 +194,8 @@ def simCV(value):
                     stepErr = compResError(Cxx,Cx2,N,minDev)
             #Store the resErr
             stepErrStor[count] = stepErr
-            #Store current - Flux of X + (Flux of U - Flux of W)
-            #Flux of X for rxns 1, 5. (Flux of U - Flux of W) = 0 unless k3 =/= 0. Subject to some error here.
-            Istor[count] = F*Dv[0]*(Cxx[1] - Cxx[0])/dx1 + F*Dv[0]*(Cxx[3*N+4] - Cxx[3*N+3] - Cxx[2*N+3] + Cxx[2*N+2])/dx1
+            #Flux of X for rxns 1, 5. (Flux of W - Flux of U) = 0 unless k3 =/= 0. Subject to some error here.
+            Istor[count] =  F*Dv[0]*(Cxx[2*N+3] - Cxx[2*N+2] - Cxx[3*N+4] + Cxx[3*N+3])/dx1 + F*Dv[0]*(Cxx[1] - Cxx[0])/dx1
             #Generate plot
             if (count % dispFreq) == 0 and showPlots == 1:
                 makePlot(Cxx,E,N,xgrid)
@@ -434,24 +433,26 @@ def getConstants(F,R,T,optn):
     if optn == 0: #rate constants
         Kv = np.exp(-DtGv/(R*T)) # Eq. constant, rxns 1->5
         #Manually reset Eq. constants if desired
-        Kv[1] = 3
+        Kv[1] = 1
+        Kv[3] = 0.1
+        Kv[5] = 3
         #For surface reactions - maximum value is 10^2 m/s or 10^4 cm/s.
         #For kinetic reactions - forward/backward split determined by equilibrium info. 
         #For concerted reaction - forward/backward split influenced in symmetry coefficient. 
         #Set rxns with a decimal value or a power (recommended)
         k1s = 10 ** (0) #m/s - Surf., rxn 1
-        k2f = 0.0 #10 ** (0) #1/s - Homog., first order, rxn 2 
+        k2f = 10 ** (0) #1/s - Homog., first order, rxn 2 
         k2b = k2f/Kv[1] # 1/(sM) - Reverse homog., second order, rxn 2
-        k3s = 0.0 #m/s - Surf., rxn 3
+        k3s = 0.000 #m/s - Surf., rxn 3
         k4f  = 0.0 #(1/(sM))*(M) - Homog., Pseudo-first order w/ const. (H2O), rxn 4
         k4b = k4f/Kv[3] #Reverse homog., Pseudo-first order w/ const. 
         k5s = 0.0 #m/s Surf., concerted rxn 5
-        k6f = 10 ** (1) #1/s - Homog., first order, rxn 2
+        k6f = 0.0 #10 ** (0) #1/s - Homog., first order, rxn 2
         k6b = k6f/Kv[5]
         #Manually reset reverse rxns if desired
-        k2b = 0
-        k4b = 0
-        k6b = 0
+        #k2b = 0
+        #k4b = 0
+        #k6b = 0
         return np.array([k1s,k2f,k2b,k3s,k4f,k4b,k5s,k6f,k6b])
     elif optn == 1: #Potentials
         #Import electrochemical information. All reactions assumed to have single electron transfer. 
@@ -508,12 +509,13 @@ def makePlot(C,E,N,xgrid):
     MP.close(1)  
 
 #Run single-value experiment
-simCV(0.0)
+simCV(-3.0)
 #Establish value vector of specified #s
 #valVect = np.array([0.005,0.0025,0.001,0.0005,0.00025])
 #valVect = np.array([0.0025,0.001,0.0005,0.00025,0.0001,0.00005,0.000025,0. ])
+#valVect = np.array([-5.0,5.0])
 #Establish value vector of range of #s
-#valVect = np.arange(-4.0,-6.0,-1.0)
+#valVect = np.arange(15.0,-16.0,-1.0)
 #Run experiments over many values
 #for vv in valVect:
 #    simCV(vv)
