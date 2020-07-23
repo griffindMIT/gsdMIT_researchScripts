@@ -48,14 +48,14 @@ def simCV(value):
     ####################### EXPERIMENT PARAMETERS ##########################
     #Establish parameters for the CV
     #CV is run as Ei -> Emax -> Emin -> Ei for # cycles at rate of nu.
-    Ei = 1.5 #V - Initial voltage
-    Emax = 5.0 #V - Max voltage 
+    Ei = 0.0 #V - Initial voltage
+    Emax = 4.0 #V - Max voltage 
     Emin = -1.0 #V - Min voltage 
     nu = 10 ** (value) #V/s- Sweep rate
     cycles = 2 #Number of CV cycles (1+)
     LSweep = 0 #Toggle. If (1), Experiment is Ei -> Emax, if (0) use full CV cycle.
     #Set bulk/initial concentrations of species. Only X is present for E, E', EC, only Y for CE. 
-    Cb = np.array([0.01,0.00,0.00,0.00,0.00]) #M - concs. for species X, Y, W, U, Z
+    Cb = np.array([0.00,0.00,0.01,0.00,0.00]) #M - concs. for species X, Y, W, U, Z
     
     ######################## COMPUTATIONAL TOGGLES ##########################
     #Toggles - changes mode of solver/computation or the information displayed
@@ -72,11 +72,11 @@ def simCV(value):
     #No support for second derivative in dynamic grid - yet. 
     
     #Constraints - inputs for solver tolerances, etc. 
-    plotDensity = 100 #Approximate # of plots per cycle. May increase w/ adaptive stepping. 
+    plotDensity = 10 #Approximate # of plots per cycle. May increase w/ adaptive stepping. 
     secDerivBurn = 100 # Number of initial points to ignore for second derivative analysis (helps avoid false zeroes). Set to 1 for no burn.
     dx_max = 10 ** (-10) #m - maximum allowable 'dx' spacing (Empirical, may change)
     Nmin = 40 #Minimum allowable # of points in space grid
-    dE = 0.01 #V, initial voltage grid spacing. Without free grid, fixes all voltage points. 
+    dE = 0.001 #V, initial voltage grid spacing. Without free grid, fixes all voltage points. 
     dE_max = 0.005 #V, maximum allowable grid spacing in freeGrid
     dE_min = 10 ** (-4) #V, minimum allowable grid spacing in freeGrid
     stepErrTol = 0.0001 # -, minimum allowable fractional deviation
@@ -440,17 +440,17 @@ def getConstants(F,R,T,optn):
         #For kinetic reactions - forward/backward split determined by equilibrium info. 
         #For concerted reaction - forward/backward split influenced in symmetry coefficient. 
         #Set rxns with a decimal value or a power (recommended)
-        k1s = 10 ** (0) #m/s - Surf., rxn 1
-        k2f = 10 ** (0) #1/s - Homog., first order, rxn 2 
+        k1s = 0.0 #10 ** (0) #m/s - Surf., rxn 1
+        k2f = 0.0 #10 ** (0) #1/s - Homog., first order, rxn 2 
         k2b = k2f/Kv[1] # 1/(sM) - Reverse homog., second order, rxn 2
-        k3s = 0.000 #m/s - Surf., rxn 3
+        k3s = 1.0 #10 ** (-1) #m/s - Surf., rxn 3
         k4f  = 0.0 #(1/(sM))*(M) - Homog., Pseudo-first order w/ const. (H2O), rxn 4
         k4b = k4f/Kv[3] #Reverse homog., Pseudo-first order w/ const. 
         k5s = 0.0 #m/s Surf., concerted rxn 5
-        k6f = 0.0 #10 ** (0) #1/s - Homog., first order, rxn 2
+        k6f = 0.0 #10 ** (10) #1/s - Homog., first order, rxn 2
         k6b = k6f/Kv[5]
         #Manually reset reverse rxns if desired
-        #k2b = 0
+        k2b = 0
         #k4b = 0
         #k6b = 0
         return np.array([k1s,k2f,k2b,k3s,k4f,k4b,k5s,k6f,k6b])
@@ -481,7 +481,7 @@ def getConstants(F,R,T,optn):
         return np.array([Dx,Dy,Dw,Du,Dz])
     else: #Equilibrium array
         #Each toggle is a reaction ri: [(r1),(r2),(r3),(r4),(r5),(r6)]. (1) uses eq., (0) uses kinetic equations
-        return np.array([0,0,0,0,0,0])
+        return np.array([0,0,1,0,0,0])
 
 def computeRates(E,VT,E0v,Bsv,kconv):
     k1f = kconv[0]*np.exp((E-E0v[0])*VT*(1 - Bsv[0]))
@@ -509,13 +509,13 @@ def makePlot(C,E,N,xgrid):
     MP.close(1)  
 
 #Run single-value experiment
-simCV(-3.0)
+simCV(10.0)
 #Establish value vector of specified #s
 #valVect = np.array([0.005,0.0025,0.001,0.0005,0.00025])
 #valVect = np.array([0.0025,0.001,0.0005,0.00025,0.0001,0.00005,0.000025,0. ])
 #valVect = np.array([-5.0,5.0])
 #Establish value vector of range of #s
-#valVect = np.arange(15.0,-16.0,-1.0)
+#valVect = np.arange(-15.0,-16.0,-2.0)
 #Run experiments over many values
 #for vv in valVect:
 #    simCV(vv)
